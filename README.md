@@ -81,6 +81,27 @@ python main.py \
 Report `lr_rgda_mc` separately from the current single-seed main table until
 multi-seed confidence intervals are rerun.
 
+## Classifier-Only Evaluation
+
+Use `--classifier_only_eval` to skip backbone/LoRA training and skip drift
+compensation. The run still follows the incremental task split, but each task
+only collects fixed-backbone training features, builds compact `SeqFT`
+statistics, reconstructs the requested classifiers, and evaluates them on the
+cumulative test set.
+
+```bash
+python main.py \
+  --dataset cifar100_224 \
+  --smart_defaults \
+  --classifier_only_eval \
+  --classifier_types lr_rgda lr_rgda_mc lda ncm cosine
+```
+
+In this mode, compensator variants such as `SeqFT + HopDC` are intentionally not
+created because there is no before/after backbone drift to estimate. The output
+therefore compares methods like `SeqFT + LR-RGDA`, `SeqFT + LR-RGDA-MC`, and
+`SeqFT + NCM` under the same fixed representation.
+
 ## Organization
 
 - `classifier/`: LR-RGDA, full RGDA, LDA, SGD and other classifier builders.

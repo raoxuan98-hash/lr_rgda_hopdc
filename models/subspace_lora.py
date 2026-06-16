@@ -224,12 +224,21 @@ class SubspaceLoRA(BaseLearner):
         
         # 记录显存使用情况
         self.gpu_monitor.log_memory(f"before_drift_compensation_task_{self.current_task_id}")
-        
-        self.drift_compensator.build_all_variants(
-            self.current_task_id,
-            self.prev_network.vit,
-            self.network.vit,
-            self.train_loader_test_mode)
+
+        if self.args.get('classifier_only_eval', False):
+            logging.info(
+                "Classifier-only evaluation: collecting SeqFT statistics and skipping drift compensation.")
+            self.drift_compensator.build_current_only(
+                self.current_task_id,
+                self.network.vit,
+                self.train_loader_test_mode,
+                low_rank=False)
+        else:
+            self.drift_compensator.build_all_variants(
+                self.current_task_id,
+                self.prev_network.vit,
+                self.network.vit,
+                self.train_loader_test_mode)
 
         self._timings.drift = time.time() - drift_start
         
@@ -325,7 +334,12 @@ class SubspaceLoRA(BaseLearner):
             self._total_classes,
             dataset_name.lower())
 
-        if self.args['eval_only']:
+        if self.args.get('classifier_only_eval', False):
+            logging.info(
+                "Classifier-only evaluation: skipping backbone/LoRA training for task %d.",
+                self.current_task_id)
+            self._timings.train = 0.0
+        elif self.args['eval_only']:
             self.load_checkpoint(self.args["log_path"])
         else:
             self.print_parameter_statistics(task_id)
@@ -396,6 +410,11 @@ class SubspaceLoRA(BaseLearner):
 
     def system_training(self) -> None:
         """Train ViT + new classifier head for ``self.epochs`` epochs."""
+        if self.iterations <= 0:
+            logging.info("Skipping system training because iterations <= 0.")
+            self._timings.train = 0.0
+            return
+
         fc_params = self.network.fc.parameters()
         # 处理不同模型类型的参数获取
         if hasattr(self.network.vit, 'get_param_groups'):

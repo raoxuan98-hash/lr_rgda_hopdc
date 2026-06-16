@@ -8,12 +8,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from compensator.gaussian_statistics import (
-    GaussianStatistics,
-    LowRankGaussianStatistics,
-    fit_diag_gmm_statistics,
-    kmeans_centers,
-)
+from compensator.gaussian_statistics import GaussianStatistics
+from compensator.statistics_collector import DistributionStatisticsCollector
 from compensator.sldc_linear import LinearCompensator
 from compensator.sldc_weaknonlinear import WeakNonlinearCompensator
 from compensator.sldc_attention import HopfieldDistributionCompensator
@@ -60,6 +56,12 @@ class DistributionCompensator:
         self.feature_dim = None
         self.cached_Z = None
         self.aux_loader = None
+        self.statistics_collector = DistributionStatisticsCollector(
+            device=device,
+            feature_combination_type=feature_combination_type,
+            rgda_num_centers=self.rgda_num_centers,
+            rgda_gmm_k=self.rgda_gmm_k,
+        )
 
         # 变体存储
         self.variants = self._initialize_variants()
@@ -125,55 +127,12 @@ class DistributionCompensator:
     def extract_features_before_after(
         self, model_before,  model_after, data_loader, return_features_before= True,
     ):
-        """同时提取前后模型的特征"""
-        operation_name = "extract_features_before_after"
-        start_memory = self._get_gpu_memory_info()
-        start_time = time.time()
-        # logging.info(f"[GPU Memory] Starting {operation_name}...")
-        
-        if model_before is not None:
-            model_before.eval()
-            model_before.to(self.device)
-            
-        model_after.eval()
-        model_after.to(self.device)
-
-        feats_before, feats_after, labels = [], [], []
-
-        for batch in data_loader:
-            inputs = batch[0]
-            targets = batch[1]
-            inputs = inputs.to(self.device)
-
-            if return_features_before:
-                # 使用forward_features方法并启用随机投影
-                if hasattr(model_before, 'forward_features'):
-                    feats_before.append(model_before.forward_features(inputs, random_projection=True).cpu())
-                else:
-                    feats_before.append(model_before(inputs).cpu())
-            else:
-                pass
-
-            # 使用forward_features方法并启用随机投影
-            if hasattr(model_after, 'forward_features'):
-                feats_after.append(model_after.forward_features(inputs, random_projection=True).cpu())
-            else:
-                feats_after.append(model_after(inputs).cpu())
-            labels.append(targets)
-            
-        result = (
-            torch.cat(feats_before) if return_features_before > 0 else None,
-            torch.cat(feats_after),
-            torch.cat(labels))
-        
-        end_time = time.time()
-        end_memory = self._get_gpu_memory_info()
-        
-        # 记录时间损耗
-        log_time_usage(operation_name, start_time, end_time)
-        self._log_memory_usage(operation_name, start_memory, end_memory)
-        
-        return result
+        return self.statistics_collector.extract_features_before_after(
+            model_before,
+            model_after,
+            data_loader,
+            return_features_before=return_features_before,
+        )
 
     @torch.no_grad()
     def _extract_combined_features(
@@ -181,57 +140,11 @@ class DistributionCompensator:
         model_before: nn.Module,
         model_after: nn.Module,
         current_loader: DataLoader):
-        """
-        一次性提取当前数据和辅助数据的组合特征，避免重复计算
-        
-        Returns:
-            Tuple: (current_before, current_after, current_labels, combined_before, combined_after)
-        """
-        # 提取当前任务特征
-        if self.feature_combination_type in ['combined', 'current_only']:
-            return_features_before = True
-        else:
-            return_features_before = False
-        current_before, current_after, current_labels = self.extract_features_before_after(
-            model_before, model_after, current_loader, return_features_before=return_features_before
+        return self.statistics_collector.extract_combined_features(
+            model_before,
+            model_after,
+            current_loader,
         )
-        
-        # 只有当current_before不为None时才计算余弦相似度
-        if current_before is not None:
-            current_cosine_sim = torch.nn.functional.cosine_similarity(current_before, current_after, dim=1).mean()
-            current_norm_diff = (current_before - current_after).norm(p=2, dim=1).mean()
-            logging.info(f"[Feature Analysis] Current features - Cosine similarity: {current_cosine_sim:.4f}, Norm difference: {current_norm_diff:.4f}")
-            
-        # 初始化组合特征
-        combined_before, combined_after = current_before, current_after
-        aux_cosine_sim = None
-        aux_norm_diff = None
-        
-        # 如果有辅助数据，合并特征
-        if self.aux_loader is not None and self.feature_combination_type in ['combined', 'aux_only']:
-            aux_before, aux_after, _ = self.extract_features_before_after(
-                model_before, model_after, self.aux_loader, return_features_before=True
-            )
-
-            if current_before is not None:
-                combined_before = torch.cat([current_before, aux_before])
-                combined_after = torch.cat([current_after, aux_after])
-            else:
-                # 当current_before为None时，只使用aux数据
-                combined_before = aux_before
-                combined_after = torch.cat([current_after, aux_after])
-                
-            # 计算辅助特征的余弦相似度和范数差异
-            if aux_before is not None:
-                aux_cosine_sim = torch.nn.functional.cosine_similarity(aux_before, aux_after, dim=1).mean()
-                aux_norm_diff = (aux_before - aux_after).norm(p=2, dim=1).mean()
-                logging.info(f"[Feature Analysis] Auxiliary features - Cosine similarity: {aux_cosine_sim:.4f}, Norm difference: {aux_norm_diff:.4f}")
-                
-        else:
-            aux_before = None
-            aux_after = None
-
-        return current_before, current_after, current_labels, aux_before, aux_after, combined_before, combined_after
 
     def _build_gaussian_statistics(
         self, 
@@ -239,52 +152,11 @@ class DistributionCompensator:
         labels: torch.Tensor,
         low_rank = False,
     ):
-        """为每个类别构建高斯统计量"""
-        features = features.cpu()
-        labels = labels.cpu()
-        unique_labels = torch.unique(labels)
-        
-        stats = {}
-        for lbl in unique_labels:
-            mask = (labels == lbl)
-            feats_class = features[mask]
-            
-            # 计算均值和协方差
-            mu = feats_class.mean(0)
-            if feats_class.size(0) >= 2:
-                cov = torch.cov(feats_class.T)
-            else:
-                cov = torch.eye(feats_class.size(1)) * 1e-4
-            
-            if low_rank:
-                stats[int(lbl.item())] = LowRankGaussianStatistics(mu, cov)
-            else:
-                centers = None
-                if self.rgda_num_centers > 1:
-                    centers = kmeans_centers(
-                        feats_class,
-                        self.rgda_num_centers,
-                        seed=42 + int(lbl.item()),
-                    )
-                gmm_means = None
-                gmm_diag_vars = None
-                gmm_weights = None
-                if self.rgda_gmm_k > 0:
-                    gmm_means, gmm_diag_vars, gmm_weights = fit_diag_gmm_statistics(
-                        feats_class,
-                        self.rgda_gmm_k,
-                        seed=1042 + int(lbl.item()),
-                    )
-                stats[int(lbl.item())] = GaussianStatistics(
-                    mu,
-                    cov,
-                    centers=centers,
-                    gmm_means=gmm_means,
-                    gmm_diag_vars=gmm_diag_vars,
-                    gmm_weights=gmm_weights,
-                )
-            
-        return stats
+        return self.statistics_collector.build_gaussian_statistics(
+            features,
+            labels,
+            low_rank=low_rank,
+        )
     
     def _compute_linear_transform(
         self,
@@ -467,14 +339,21 @@ class DistributionCompensator:
         model_after: nn.Module,
         data_loader: DataLoader, 
         low_rank: bool = True):
-        # 参数验证
         if task_id <= 0:
-            raise ValueError("task_id must be non-negative")
-    
-        current_before, current_after, current_labels = self.extract_features_before_after(None, model_after, data_loader, return_features_before=False)
-        current_stats = self._build_gaussian_statistics(current_after, current_labels, low_rank=low_rank)
-        self.variants["SeqFT"].update(copy.deepcopy(current_stats))
-        logging.info(f"[INFO] DistributionCompensator built {len(self.variants)} variants for task {task_id}.")
+            raise ValueError("task_id must be positive after current_task_id increment")
+
+        current_stats = self.statistics_collector.collect_current_stats(
+            model_after,
+            data_loader,
+            low_rank=low_rank,
+        )
+        seqft_stats = self.variants.get("SeqFT", {})
+        seqft_stats.update(copy.deepcopy(current_stats))
+        self.variants = {"SeqFT": seqft_stats}
+        logging.info(
+            "[INFO] Distribution statistics collected without drift compensation for task %d.",
+            task_id,
+        )
         return self.variants
 
     def build_all_variants(
@@ -543,6 +422,7 @@ class DistributionCompensator:
     def set_auxiliary_loader(self, aux_loader: DataLoader):
         """设置辅助数据加载器"""
         self.aux_loader = aux_loader
+        self.statistics_collector.set_auxiliary_loader(aux_loader)
 
     def clear_cache(self):
         """清除缓存"""

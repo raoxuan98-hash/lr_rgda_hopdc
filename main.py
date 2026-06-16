@@ -145,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_grp.add_argument('--kd_type', type=str, default='feat', help='KD type (feat / cos).')
     train_grp.add_argument('--distillation_transform', type=str, default='identity', help='Distillation head transform (identity / linear / weaknonlinear).')
     train_grp.add_argument('--eval_only', action='store_true', default=False)
+    train_grp.add_argument('--classifier_only_eval', action='store_true', default=False, help='Skip backbone training and drift compensation; collect fixed-backbone statistics and evaluate classifiers only.')
 
     model.add_argument('--lora_rank', type=int, default=4, help='LoRA rank.')
     model.add_argument('--lora_type', type=str, default="full", choices=['basic_lora', 'sgp_lora', 'nsp_lora', 'full', 'full_nsp', 'joint_lora', 'joint_full'], help='Type of LoRA adaptor.')
