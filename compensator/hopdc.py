@@ -1,0 +1,4 @@
+from compensator.sldc_attention import HopfieldDistributionCompensator
+
+HopDC = HopfieldDistributionCompensator
+

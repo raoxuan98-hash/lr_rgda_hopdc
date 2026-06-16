@@ -1,0 +1,70 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+experiments/legacy_rebuttal/visualization/rebuttal_tnse可视化.ipynb
+
+# Logs
+chat-history/
+logs/
+**/logs/
+*.log
+*.out
+*.err
+wandb/
+tensorboard/
+runs/
+lightning_logs/
+
+# Project specific log folders
+random_projector_logs_*/
+sldc_logs_*/
+RGDA_CD_*/
+RGDA_WD_*/
+RGDA_*/
+
+# Experiment and cache folders
+cached_data/
+实验结果保存/
+balanced_datasets/
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+**/checkpoints/
+outputs/
+**/outputs/
+artifacts/
+**/artifacts/
+
+# Data
+/data/
+*.zip
+*.tar
+*.tar.gz
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.history/
+.codebuddy/
+~/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
