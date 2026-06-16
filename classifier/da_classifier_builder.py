@@ -155,7 +155,7 @@ class LRRGDAClassifierBuilder(BaseClassifierBuilder):
 class LDATopKLRRGDARerankClassifier(nn.Module):
     """Use lightweight LDA for coarse top-k retrieval and LR-RGDA for reranking."""
 
-    def __init__(self, lda_model: nn.Module, rgda_model: nn.Module, topk: int = 20):
+    def __init__(self, lda_model: nn.Module, rgda_model: nn.Module, topk: int = 50):
         super().__init__()
         self.lda_model = lda_model
         self.rgda_model = rgda_model
@@ -188,7 +188,7 @@ class LDATopKLRRGDARerankBuilder(BaseClassifierBuilder):
     def __init__(
         self,
         lda_reg_alpha=0.3,
-        topk=20,
+        topk=50,
         rgda_alpha1=0.2,
         rgda_alpha2=0.2,
         rgda_alpha3=0.2,

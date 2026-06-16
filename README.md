@@ -93,15 +93,20 @@ cumulative test set.
 python main.py \
   --dataset cifar100_224 \
   --smart_defaults \
-  --classifier_only_eval \
+  --non_incremental_classifier_eval \
   --classifier_types lda lr_rgda lr_rgda_rerank lr_rgda_mc lr_rgda_mc_rerank ncm cosine \
-  --rgda_rerank_topk 20
+  --rgda_rerank_topk 50
 ```
 
 In this mode, compensator variants such as `SeqFT + HopDC` are intentionally not
 created because there is no before/after backbone drift to estimate. The output
 therefore compares methods like `SeqFT + LR-RGDA`, `SeqFT + LR-RGDA-MC`, and
 `SeqFT + NCM` under the same fixed representation.
+
+`--non_incremental_classifier_eval` is a stricter one-task variant of
+`--classifier_only_eval`: for within-domain datasets it sets `init_cls` to the
+dataset class count and `increment=0`, so all classes are evaluated in a single
+non-incremental classifier comparison.
 
 The reranking classifiers implement the appendix inference-speed path:
 `lr_rgda_rerank` uses LDA to select a coarse top-k set, then scores only those

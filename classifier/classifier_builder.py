@@ -91,7 +91,7 @@ class ClassifierReconstructor:
             kwargs.get('rgda_fit_samples_per_class', 16))
         self.rgda_gmm_sample_mode = kwargs.get('rgda_gmm_sample_mode', 'mean')
         self.rgda_gmm_seed = kwargs.get('rgda_gmm_seed', 42)
-        self.rgda_rerank_topk = kwargs.get('rgda_rerank_topk', 20)
+        self.rgda_rerank_topk = kwargs.get('rgda_rerank_topk', 50)
         logging.info(
             "[ClassifierReconstructor] RGDA regularization alphas set to %s, %s, %s",
             self.rgda_alpha1,

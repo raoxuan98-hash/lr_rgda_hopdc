@@ -5,6 +5,42 @@
 import argparse
 from trainer import train
 
+
+DATASET_NUM_CLASSES = {
+    'cifar100_224': 100,
+    'cars196_224': 196,
+    'cub200_224': 200,
+    'imagenet-r': 200,
+    'imagenet-a': 200,
+    'vtab': 50,
+    'caltech101_224': 102,
+    'oxfordpet37_224': 37,
+    'food101_224': 101,
+    'resisc45_224': 45,
+}
+
+
+def apply_non_incremental_classifier_eval(ns):
+    if not getattr(ns, 'non_incremental_classifier_eval', False):
+        return ns
+
+    ns.classifier_only_eval = True
+    ns.evaluate_final_only = True
+    ns.iterations = 0
+    ns.gamma_kd = 0.0
+
+    if ns.cross_domain:
+        ns.enable_incremental_split = False
+        return ns
+
+    if ns.dataset not in DATASET_NUM_CLASSES:
+        raise ValueError(
+            f"Unknown class count for non-incremental evaluation dataset: {ns.dataset}")
+    ns.init_cls = DATASET_NUM_CLASSES[ns.dataset]
+    ns.increment = 0
+    return ns
+
+
 def set_smart_defaults(ns):
     # 如果是跨域实验，只处理 joint_full 方法的默认值
     if ns.cross_domain:
@@ -12,11 +48,11 @@ def set_smart_defaults(ns):
         if ns.lora_type == 'joint_full':
             ns.lrate = 1e-5
             ns.iterations = 6000
-        return ns
+        return apply_non_incremental_classifier_eval(ns)
     
     # 只有在非跨域实验且启用了smart_defaults时，才设置默认值
     if not ns.smart_defaults:
-        return ns
+        return apply_non_incremental_classifier_eval(ns)
     
     # 根据数据集设置基础参数
     if ns.dataset == 'cars196_224':
@@ -88,7 +124,7 @@ def set_smart_defaults(ns):
         
         ns.iterations = 6000
 
-    return ns
+    return apply_non_incremental_classifier_eval(ns)
 
 
 def main(args):
@@ -146,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_grp.add_argument('--distillation_transform', type=str, default='identity', help='Distillation head transform (identity / linear / weaknonlinear).')
     train_grp.add_argument('--eval_only', action='store_true', default=False)
     train_grp.add_argument('--classifier_only_eval', action='store_true', default=False, help='Skip backbone training and drift compensation; collect fixed-backbone statistics and evaluate classifiers only.')
+    train_grp.add_argument('--non_incremental_classifier_eval', action='store_true', default=False, help='Run one non-incremental classifier-only evaluation task over all classes; no backbone training and no drift compensation.')
 
     model.add_argument('--lora_rank', type=int, default=4, help='LoRA rank.')
     model.add_argument('--lora_type', type=str, default="full", choices=['basic_lora', 'sgp_lora', 'nsp_lora', 'full', 'full_nsp', 'joint_lora', 'joint_full'], help='Type of LoRA adaptor.')
@@ -167,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_gmm_k', type=int, default=4, help='Diagonal-GMM components saved per class for lr_rgda_mc replay.')
     gda.add_argument('--rgda_gmm_sample_mode', type=str, default='mean', choices=['mean', 'sample'], help='GMM replay mode for lr_rgda_mc: component means or diagonal-Gaussian samples.')
     gda.add_argument('--rgda_gmm_seed', type=int, default=42, help='Random seed for lr_rgda_mc GMM replay sampling.')
-    gda.add_argument('--rgda_rerank_topk', type=int, default=20, help='LDA coarse top-k size for LDA-TopK-LR-RGDA reranking classifiers.')
+    gda.add_argument('--rgda_rerank_topk', type=int, default=50, help='LDA coarse top-k size for LDA-TopK-LR-RGDA reranking classifiers.')
     
     aux = parser.add_argument_group('auxiliary', 'External / auxiliary dataset')
     aux.add_argument('--auxiliary_data_path', type=str, default='/data1/open_datasets', help='Root path of the auxiliary dataset.')

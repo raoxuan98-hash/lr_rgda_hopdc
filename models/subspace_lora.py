@@ -149,7 +149,7 @@ class SubspaceLoRA(BaseLearner):
                 args.get('rgda_fit_samples_per_class', 16)),
             rgda_gmm_sample_mode=args.get('rgda_gmm_sample_mode', 'mean'),
             rgda_gmm_seed=args.get('rgda_gmm_seed', 42),
-            rgda_rerank_topk=args.get('rgda_rerank_topk', 20))
+            rgda_rerank_topk=args.get('rgda_rerank_topk', 50))
         
         # 获取特征维度，处理不同模型类型
         feat_dim = getattr(self.network.vit, 'feature_dim', 768)
