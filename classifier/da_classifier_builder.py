@@ -50,6 +50,8 @@ class LRRGDAClassifierBuilder(BaseClassifierBuilder):
         train_iter=0,
         fit_lr=0.01,
         fit_samples_per_class=0,
+        fit_sample_mode="mean",
+        fit_seed=42,
         fit_verbose=True,
     ):
         self.rgda_alpha1 = rgda_alpha1 if qda_reg_alpha1 is None else qda_reg_alpha1
@@ -65,6 +67,8 @@ class LRRGDAClassifierBuilder(BaseClassifierBuilder):
         self.train_iter = max(0, int(train_iter))
         self.fit_lr = fit_lr
         self.fit_samples_per_class = max(0, int(fit_samples_per_class))
+        self.fit_sample_mode = fit_sample_mode
+        self.fit_seed = int(fit_seed)
         self.fit_verbose = fit_verbose
 
     def _center_means_from_stats(self, stats_dict):
@@ -86,7 +90,19 @@ class LRRGDAClassifierBuilder(BaseClassifierBuilder):
             return None, None
         features, labels = [], []
         for cid in sorted(stats_dict.keys()):
-            samples = stats_dict[cid].sample(n_samples=self.fit_samples_per_class).cpu()
+            stat = stats_dict[cid]
+            if getattr(stat, "gmm_means", None) is not None:
+                samples = stat.sample_gmm(
+                    n_samples=self.fit_samples_per_class,
+                    mode=self.fit_sample_mode,
+                    seed=self.fit_seed + int(cid),
+                ).cpu()
+            else:
+                logging.warning(
+                    "Class %s has no stored GMM replay statistics; falling back to single Gaussian sampling.",
+                    cid,
+                )
+                samples = stat.sample(n_samples=self.fit_samples_per_class).cpu()
             features.append(samples)
             labels.append(torch.full((samples.size(0),), int(cid), dtype=torch.long))
         return torch.cat(features, dim=0), torch.cat(labels, dim=0)

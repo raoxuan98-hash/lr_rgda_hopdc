@@ -53,32 +53,33 @@ python main.py --dataset imagenet-a --smart_defaults --classifier_types lr_rgda
 python main.py --dataset vtab --smart_defaults --classifier_types lr_rgda
 ```
 
-## Optional LR-RGDA Enhancements
+## Optional LR-RGDA-MC Classifier
 
-The default classifier remains the analytic single-center LR-RGDA used by the
-paper-facing entry. Two optional classifier-side extensions are available for
-ablation runs:
+The default `lr_rgda` classifier remains the analytic single-center LR-RGDA
+baseline. The optional `lr_rgda_mc` classifier can be evaluated in the same
+backbone-training run; it uses multiple per-class centers and affine-only
+classifier fitting from compact diagonal-GMM replay statistics.
 
 ```bash
 python main.py \
   --dataset cifar100_224 \
   --smart_defaults \
-  --classifier_types lr_rgda \
-  --rgda_num_centers 4 \
-  --rgda_train_iter 200 \
-  --rgda_fit_samples_per_class 16
+  --classifier_types lr_rgda lr_rgda_mc \
+  --compensator_types SeqFT "SeqFT + HopDC"
 ```
 
-- `--rgda_num_centers`: stores multiple compact per-class centers and evaluates
-  LR-RGDA with a log-sum-exp over centers.
-- `--rgda_train_iter`: enables affine-only classifier fine-tuning while keeping
-  the covariance / low-rank structure fixed.
-- `--rgda_fit_samples_per_class`: draws compact pseudo-features from the stored
-  Gaussian statistics for classifier fine-tuning. A value of `0` disables fit
-  data generation.
+- `lr_rgda`: single-center analytic LR-RGDA; no classifier fitting.
+- `lr_rgda_mc`: default `--rgda_mc_num_centers 4`,
+  `--rgda_mc_train_iter 200`, `--rgda_gmm_k 4`,
+  `--rgda_mc_fit_samples_per_class 16`.
+- `--rgda_gmm_sample_mode mean`: repeats fitted GMM component means for compact
+  replay; this is the default because it has been more stable than stochastic
+  GMM samples in recent classifier-replay experiments.
+- `--rgda_gmm_sample_mode sample`: samples from the stored diagonal-Gaussian GMM
+  components when stochastic replay is explicitly desired.
 
-These flags are disabled by default and should be reported separately from the
-single-seed main table until multi-seed confidence intervals are rerun.
+Report `lr_rgda_mc` separately from the current single-seed main table until
+multi-seed confidence intervals are rerun.
 
 ## Organization
 

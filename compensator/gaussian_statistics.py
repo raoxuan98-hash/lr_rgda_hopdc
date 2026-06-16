@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 import torch
@@ -76,6 +77,9 @@ class GaussianStatistics:
         reg: float = 1e-4,
         cholesky = False,
         centers: Optional[torch.Tensor] = None,
+        gmm_means: Optional[torch.Tensor] = None,
+        gmm_diag_vars: Optional[torch.Tensor] = None,
+        gmm_weights: Optional[torch.Tensor] = None,
     ):
         if mean.dim() == 2 and mean.size(0) == 1:
             mean = mean.squeeze(0)
@@ -86,6 +90,9 @@ class GaussianStatistics:
         self.cov = cov
         self.reg = reg
         self.centers = centers
+        self.gmm_means = gmm_means
+        self.gmm_diag_vars = gmm_diag_vars
+        self.gmm_weights = gmm_weights
 
         if cholesky:
             self.L = cholesky_stable_with_fallback(cov, reg=reg)
@@ -99,6 +106,12 @@ class GaussianStatistics:
         self.cov = self.cov.to(device)
         if self.centers is not None:
             self.centers = self.centers.to(device)
+        if self.gmm_means is not None:
+            self.gmm_means = self.gmm_means.to(device)
+        if self.gmm_diag_vars is not None:
+            self.gmm_diag_vars = self.gmm_diag_vars.to(device)
+        if self.gmm_weights is not None:
+            self.gmm_weights = self.gmm_weights.to(device)
         if self.L is not None:
             self.L = self.L.to(device)
         return self
@@ -126,6 +139,136 @@ class GaussianStatistics:
 
         samples = self.mean.unsqueeze(0) + eps @ self.L.t()
         return samples
+
+    def sample_gmm(
+        self,
+        n_samples: int,
+        mode: str = "mean",
+        seed: Optional[int] = None,
+        normalize: bool = True,
+    ) -> torch.Tensor:
+        """Draw compact replay samples from stored diagonal-GMM statistics."""
+        if self.gmm_means is None or self.gmm_weights is None:
+            return self.sample(n_samples=n_samples)
+
+        mode = str(mode).lower()
+        if mode not in {"mean", "sample"}:
+            raise ValueError(f"Unsupported GMM sample mode: {mode}")
+
+        device = self.mean.device
+        means = self.gmm_means.to(device)
+        weights = self.gmm_weights.to(device).float()
+        weights = weights / weights.sum().clamp(min=1e-12)
+        k = means.size(0)
+        if k == 0:
+            raise ValueError("Stored GMM has zero components")
+
+        raw_counts = weights * int(n_samples)
+        counts = torch.floor(raw_counts).long()
+        remaining = int(n_samples - counts.sum().item())
+        if remaining > 0:
+            order = torch.argsort(raw_counts - counts.float(), descending=True)
+            for idx in order[:remaining]:
+                counts[idx] += 1
+
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=device).manual_seed(int(seed))
+
+        chunks = []
+        diag_vars = None
+        if self.gmm_diag_vars is not None:
+            diag_vars = self.gmm_diag_vars.to(device).clamp(min=1e-8)
+
+        for comp_idx in range(k):
+            count = int(counts[comp_idx].item())
+            if count <= 0:
+                continue
+            mean = means[comp_idx].unsqueeze(0)
+            if mode == "mean" or diag_vars is None:
+                samples = mean.repeat(count, 1)
+            else:
+                std = torch.sqrt(diag_vars[comp_idx]).unsqueeze(0)
+                noise = torch.randn(
+                    count,
+                    mean.size(1),
+                    device=device,
+                    generator=generator,
+                )
+                samples = mean + noise * std
+            if normalize:
+                samples = torch.nn.functional.normalize(samples, dim=-1)
+            chunks.append(samples)
+
+        if not chunks:
+            raise ValueError("GMM replay generated no samples")
+        return torch.cat(chunks, dim=0)
+
+
+def make_gaussian_statistics_like(
+    stat: GaussianStatistics,
+    mean: torch.Tensor,
+    cov: torch.Tensor,
+    centers: Optional[torch.Tensor] = None,
+    gmm_means: Optional[torch.Tensor] = None,
+    gmm_diag_vars: Optional[torch.Tensor] = None,
+) -> GaussianStatistics:
+    """Create a transformed statistic while preserving optional compact replay fields."""
+    return GaussianStatistics(
+        mean,
+        cov,
+        stat.reg,
+        centers=centers,
+        gmm_means=gmm_means,
+        gmm_diag_vars=(
+            gmm_diag_vars
+            if gmm_diag_vars is not None
+            else getattr(stat, "gmm_diag_vars", None)
+        ),
+        gmm_weights=getattr(stat, "gmm_weights", None),
+    )
+
+
+def fit_diag_gmm_statistics(
+    x: torch.Tensor,
+    num_components: int,
+    seed: int = 42,
+    reg: float = 1e-6,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Fit a compact diagonal GMM to one class of features."""
+    x = x.detach().float().cpu()
+    actual_k = max(1, min(int(num_components), x.size(0)))
+
+    if actual_k == 1:
+        var = x.var(dim=0, unbiased=False).clamp(min=reg)
+        return x.mean(dim=0, keepdim=True), var.unsqueeze(0), torch.ones(1)
+
+    try:
+        from sklearn.mixture import GaussianMixture
+
+        gmm = GaussianMixture(
+            n_components=actual_k,
+            covariance_type="diag",
+            random_state=int(seed),
+            reg_covar=float(reg),
+        )
+        gmm.fit(x.numpy())
+        means = torch.from_numpy(gmm.means_).float()
+        diag_vars = torch.from_numpy(gmm.covariances_).float().clamp(min=reg)
+        weights = torch.from_numpy(gmm.weights_).float()
+        return means, diag_vars, weights
+    except Exception as exc:
+        logging.warning("Falling back to torch k-means diagonal GMM stats: %s", exc)
+        centers = kmeans_centers(x, actual_k, seed=seed)
+        labels = torch.cdist(x, centers).argmin(dim=1)
+        diag_vars = []
+        weights = []
+        for comp_idx in range(actual_k):
+            mask = labels == comp_idx
+            feats = x[mask] if mask.any() else centers[comp_idx].unsqueeze(0)
+            diag_vars.append(feats.var(dim=0, unbiased=False).clamp(min=reg))
+            weights.append(float(feats.size(0)) / float(x.size(0)))
+        return centers, torch.stack(diag_vars), torch.tensor(weights).float()
 
 class LowRankGaussianStatistics:
     def __init__(

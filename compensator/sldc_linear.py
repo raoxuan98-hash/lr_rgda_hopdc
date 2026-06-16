@@ -2,7 +2,7 @@
 import torch
 import torch.nn.functional as F
 import math
-from compensator.gaussian_statistics import GaussianStatistics
+from compensator.gaussian_statistics import make_gaussian_statistics_like
 from compensator.base_compensator import BaseCompensator
 
 
@@ -35,5 +35,18 @@ class LinearCompensator(BaseCompensator):
             mu_new = s.mean @ W
             cov_new = WT @ s.cov @ W + 1e-3 * torch.eye(s.cov.size(0))
             centers_new = s.centers @ W if getattr(s, "centers", None) is not None else None
-            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg, centers=centers_new)
+            gmm_means_new = (
+                s.gmm_means @ W if getattr(s, "gmm_means", None) is not None else None
+            )
+            gmm_diag_vars_new = None
+            if getattr(s, "gmm_diag_vars", None) is not None:
+                gmm_diag_vars_new = s.gmm_diag_vars @ (W ** 2)
+            out[cid] = make_gaussian_statistics_like(
+                s,
+                mu_new,
+                cov_new,
+                centers=centers_new,
+                gmm_means=gmm_means_new,
+                gmm_diag_vars=gmm_diag_vars_new,
+            )
         return out

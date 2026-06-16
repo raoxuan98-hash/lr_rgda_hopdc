@@ -75,10 +75,17 @@ class ClassifierReconstructor:
         self.qda_reg_alpha1 = self.rgda_alpha1
         self.qda_reg_alpha2 = self.rgda_alpha2
         self.qda_reg_alpha3 = self.rgda_alpha3
-        self.rgda_num_centers = kwargs.get('rgda_num_centers', 1)
-        self.rgda_train_iter = kwargs.get('rgda_train_iter', 0)
-        self.rgda_fit_lr = kwargs.get('rgda_fit_lr', 0.01)
-        self.rgda_fit_samples_per_class = kwargs.get('rgda_fit_samples_per_class', 0)
+        self.rgda_mc_num_centers = kwargs.get(
+            'rgda_mc_num_centers', kwargs.get('rgda_num_centers', 4))
+        self.rgda_mc_train_iter = kwargs.get(
+            'rgda_mc_train_iter', kwargs.get('rgda_train_iter', 200))
+        self.rgda_mc_fit_lr = kwargs.get(
+            'rgda_mc_fit_lr', kwargs.get('rgda_fit_lr', 0.01))
+        self.rgda_mc_fit_samples_per_class = kwargs.get(
+            'rgda_mc_fit_samples_per_class',
+            kwargs.get('rgda_fit_samples_per_class', 16))
+        self.rgda_gmm_sample_mode = kwargs.get('rgda_gmm_sample_mode', 'mean')
+        self.rgda_gmm_seed = kwargs.get('rgda_gmm_seed', 42)
         logging.info(
             "[ClassifierReconstructor] RGDA regularization alphas set to %s, %s, %s",
             self.rgda_alpha1,
@@ -130,6 +137,10 @@ class ClassifierReconstructor:
             "lrrgda": "lr_rgda",
             "lr_rgda": "lr_rgda",
             "low_rank_rgda": "lr_rgda",
+            "lr_rgda_mc": "lr_rgda_mc",
+            "lrrgda_mc": "lr_rgda_mc",
+            "multi_center_rgda": "lr_rgda_mc",
+            "multicenter_rgda": "lr_rgda_mc",
             "qda": "qda",
             "rgda": "rgda_full",
             "full_rgda": "rgda_full",
@@ -147,6 +158,7 @@ class ClassifierReconstructor:
 
         display_names = {
             "lr_rgda": "LR-RGDA",
+            "lr_rgda_mc": "LR-RGDA-MC",
             "rgda_full": "RGDA",
             "qda": "QDA",
             "lda": "LDA",
@@ -169,10 +181,24 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
-                num_centers=self.rgda_num_centers,
-                train_iter=self.rgda_train_iter,
-                fit_lr=self.rgda_fit_lr,
-                fit_samples_per_class=self.rgda_fit_samples_per_class,
+                num_centers=1,
+                train_iter=0,
+                fit_samples_per_class=0,
+                device=self.device,
+            )
+
+        elif classifier_type == "lr_rgda_mc":
+            return LRRGDAClassifierBuilder(
+                rgda_alpha1=self.rgda_alpha1,
+                rgda_alpha2=self.rgda_alpha2,
+                rgda_alpha3=self.rgda_alpha3,
+                low_rank=True,
+                num_centers=self.rgda_mc_num_centers,
+                train_iter=self.rgda_mc_train_iter,
+                fit_lr=self.rgda_mc_fit_lr,
+                fit_samples_per_class=self.rgda_mc_fit_samples_per_class,
+                fit_sample_mode=self.rgda_gmm_sample_mode,
+                fit_seed=self.rgda_gmm_seed,
                 device=self.device,
             )
 
@@ -190,10 +216,9 @@ class ClassifierReconstructor:
                 qda_reg_alpha1=self.qda_reg_alpha1,
                 qda_reg_alpha2=self.qda_reg_alpha2,
                 qda_reg_alpha3=self.qda_reg_alpha3,
-                num_centers=self.rgda_num_centers,
-                train_iter=self.rgda_train_iter,
-                fit_lr=self.rgda_fit_lr,
-                fit_samples_per_class=self.rgda_fit_samples_per_class,
+                num_centers=1,
+                train_iter=0,
+                fit_samples_per_class=0,
                 device=self.device,
             )
 

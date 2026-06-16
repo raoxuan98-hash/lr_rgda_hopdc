@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from compensator.gaussian_statistics import GaussianStatistics
+from compensator.gaussian_statistics import make_gaussian_statistics_like
 from compensator.base_compensator import BaseCompensator
 
 class ResidMLP(nn.Module):
@@ -72,7 +72,16 @@ class WeakNonlinearCompensator(BaseCompensator):
             centers_new = None
             if getattr(s, "centers", None) is not None:
                 centers_new = self.net(s.centers.to(device)).cpu()
-            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg, centers=centers_new)
+            gmm_means_new = None
+            if getattr(s, "gmm_means", None) is not None:
+                gmm_means_new = self.net(s.gmm_means.to(device)).cpu()
+            out[cid] = make_gaussian_statistics_like(
+                s,
+                mu_new,
+                cov_new,
+                centers=centers_new,
+                gmm_means=gmm_means_new,
+            )
             
             # 清理临时变量
             del transformed, mu_new, cov_new

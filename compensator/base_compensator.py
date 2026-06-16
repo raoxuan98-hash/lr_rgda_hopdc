@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Dict
 import torch
 import torch.nn.functional as F
-from compensator.gaussian_statistics import GaussianStatistics
+from compensator.gaussian_statistics import GaussianStatistics, make_gaussian_statistics_like
 
 
 class BaseCompensator(ABC):
@@ -108,7 +108,18 @@ class RFFDriftCompensator(BaseCompensator):
                     centers = stat.centers.to(self.device)
                     phi_centers = self._rff_map(F.normalize(centers, dim=1))
                     centers_new = (centers + phi_centers @ W).cpu()
-                out[cid] = GaussianStatistics(mu_new.cpu(), cov.cpu(), stat.reg, centers=centers_new)
+                gmm_means_new = None
+                if getattr(stat, "gmm_means", None) is not None:
+                    gmm_means = stat.gmm_means.to(self.device)
+                    phi_gmm = self._rff_map(F.normalize(gmm_means, dim=1))
+                    gmm_means_new = (gmm_means + phi_gmm @ W).cpu()
+                out[cid] = make_gaussian_statistics_like(
+                    stat,
+                    mu_new.cpu(),
+                    cov.cpu(),
+                    centers=centers_new,
+                    gmm_means=gmm_means_new,
+                )
                 continue
 
             # --- 协方差补偿：采样 + 残差预测 ---
@@ -145,7 +156,18 @@ class RFFDriftCompensator(BaseCompensator):
                 centers = stat.centers.to(self.device)
                 phi_centers = self._rff_map(F.normalize(centers, dim=1))
                 centers_new = (centers + phi_centers @ W).cpu()
-            out[cid] = GaussianStatistics(mu_final, cov_final, stat.reg, centers=centers_new)
+            gmm_means_new = None
+            if getattr(stat, "gmm_means", None) is not None:
+                gmm_means = stat.gmm_means.to(self.device)
+                phi_gmm = self._rff_map(F.normalize(gmm_means, dim=1))
+                gmm_means_new = (gmm_means + phi_gmm @ W).cpu()
+            out[cid] = make_gaussian_statistics_like(
+                stat,
+                mu_final,
+                cov_final,
+                centers=centers_new,
+                gmm_means=gmm_means_new,
+            )
 
         # 清理缓存
         if torch.cuda.is_available():

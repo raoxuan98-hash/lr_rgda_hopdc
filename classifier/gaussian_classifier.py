@@ -254,6 +254,7 @@ class LowRankGaussianDA(nn.Module):
         # === 1. 批次计算全局协方差 ===
         C = len(self.class_ids)
         D = stats_dict[self.class_ids[0]].mean.shape[0]
+        self.rank = min(int(rank), int(D))
         
         logging.info(f"[Init] Data shape: {C} classes, {D} features")
         
@@ -418,7 +419,7 @@ class LowRankGaussianDA(nn.Module):
             self.register_buffer("U_eff_T_B_inv", U_eff_T_B_inv)
             self.register_buffer("M_invs", M_inv)
             self.register_buffer("_feature_dim", torch.tensor(D))
-            self.register_buffer("_rank", torch.tensor(rank))
+            self.register_buffer("_rank", torch.tensor(self.rank))
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -445,7 +446,7 @@ class LowRankGaussianDA(nn.Module):
         
         # 存储维度信息用于调试
         self.register_buffer("_feature_dim", torch.tensor(D))
-        self.register_buffer("_rank", torch.tensor(rank))
+        self.register_buffer("_rank", torch.tensor(self.rank))
         
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import logging
-from compensator.gaussian_statistics import GaussianStatistics
+from compensator.gaussian_statistics import make_gaussian_statistics_like
 from compensator.base_compensator import BaseCompensator
 import math
 
@@ -139,6 +139,20 @@ class RFFDriftCompensator(BaseCompensator):
             compensated_samples = compensated_samples.cpu()
             mu_new = 0.9 * compensated_samples.mean(dim=0) + 0.1 * mu.cpu()
             cov_new = 0.9 * torch.cov(compensated_samples.T) + 0.1 * cov.cpu()
-            out[cid] = GaussianStatistics(mu_new, cov_new, stat.reg)
+            gmm_means_new = None
+            if getattr(stat, "gmm_means", None) is not None:
+                gmm_means_new = self._compute_kernelized_attention(
+                    queries=stat.gmm_means.to(self.device),
+                    keys=fb,
+                    drift=drift,
+                    temperature=base_temperature,
+                    top_k=top_k,
+                ).cpu()
+            out[cid] = make_gaussian_statistics_like(
+                stat,
+                mu_new,
+                cov_new,
+                gmm_means=gmm_means_new,
+            )
 
         return out

@@ -159,10 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_alpha1', '--qda_reg_alpha1', dest='qda_reg_alpha1', type=float, default=0.20, help='RGDA class-specific covariance weight alpha1.')
     gda.add_argument('--rgda_alpha2', '--qda_reg_alpha2', dest='qda_reg_alpha2', type=float, default=2.00, help='RGDA shared covariance weight alpha2.')
     gda.add_argument('--rgda_alpha3', '--qda_reg_alpha3', dest='qda_reg_alpha3', type=float, default=0.50, help='RGDA identity regularization weight alpha3.')
-    gda.add_argument('--rgda_num_centers', type=int, default=1, help='Number of per-class centers for multi-centroid LR-RGDA. 1 keeps the analytic single-center classifier.')
-    gda.add_argument('--rgda_train_iter', type=int, default=0, help='Affine-only LR-RGDA fine-tuning iterations. 0 disables classifier fine-tuning.')
-    gda.add_argument('--rgda_fit_lr', type=float, default=0.01, help='Learning rate for affine-only LR-RGDA classifier fine-tuning.')
-    gda.add_argument('--rgda_fit_samples_per_class', type=int, default=0, help='Pseudo-samples per class drawn from Gaussian statistics for LR-RGDA fine-tuning. 0 disables fit data generation.')
+    gda.add_argument('--rgda_num_centers', '--rgda_mc_num_centers', dest='rgda_mc_num_centers', type=int, default=4, help='Per-class centers for lr_rgda_mc. The old --rgda_num_centers spelling is kept as an alias.')
+    gda.add_argument('--rgda_train_iter', '--rgda_mc_train_iter', dest='rgda_mc_train_iter', type=int, default=200, help='Affine-only fine-tuning iterations for lr_rgda_mc.')
+    gda.add_argument('--rgda_fit_lr', '--rgda_mc_fit_lr', dest='rgda_mc_fit_lr', type=float, default=0.01, help='Learning rate for lr_rgda_mc affine-only fine-tuning.')
+    gda.add_argument('--rgda_fit_samples_per_class', '--rgda_mc_fit_samples_per_class', dest='rgda_mc_fit_samples_per_class', type=int, default=16, help='GMM replay pseudo-samples per class for lr_rgda_mc.')
+    gda.add_argument('--rgda_gmm_k', type=int, default=4, help='Diagonal-GMM components saved per class for lr_rgda_mc replay.')
+    gda.add_argument('--rgda_gmm_sample_mode', type=str, default='mean', choices=['mean', 'sample'], help='GMM replay mode for lr_rgda_mc: component means or diagonal-Gaussian samples.')
+    gda.add_argument('--rgda_gmm_seed', type=int, default=42, help='Random seed for lr_rgda_mc GMM replay sampling.')
     
     aux = parser.add_argument_group('auxiliary', 'External / auxiliary dataset')
     aux.add_argument('--auxiliary_data_path', type=str, default='/data1/open_datasets', help='Root path of the auxiliary dataset.')
@@ -184,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     interp.add_argument('--enable_weight_interpolation', action="store_true", default=False, help='Enable weight interpolation with previous network.')
     
     # 分类器参数
-    cls.add_argument('--classifier_types', type=str, nargs='+', default=['lr_rgda'], choices=['lr_rgda', 'lrrgda', 'low_rank_rgda', 'rgda', 'rgda_full', 'full_rgda', 'qda', 'lda', 'sgd', 'ls', 'tsvd', 'ncm', 'cosine'], help='Classifier reconstruction methods. Use lr_rgda for the paper method; qda is kept as a legacy alias.')
+    cls.add_argument('--classifier_types', type=str, nargs='+', default=['lr_rgda'], choices=['lr_rgda', 'lrrgda', 'low_rank_rgda', 'lr_rgda_mc', 'lrrgda_mc', 'multi_center_rgda', 'multicenter_rgda', 'rgda', 'rgda_full', 'full_rgda', 'qda', 'lda', 'sgd', 'ls', 'tsvd', 'ncm', 'cosine'], help='Classifier reconstruction methods. lr_rgda is the single-center analytic baseline; lr_rgda_mc adds multi-centers and GMM replay fitting.')
     
     return parser
 

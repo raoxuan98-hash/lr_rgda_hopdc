@@ -3,7 +3,7 @@
 import torch
 import torch.nn.functional as F
 import logging
-from compensator.gaussian_statistics import GaussianStatistics
+from compensator.gaussian_statistics import make_gaussian_statistics_like
 from compensator.base_compensator import BaseCompensator
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,22 @@ class HopfieldDistributionCompensator(BaseCompensator):
                         base_temperature,
                         top_k,
                     ).cpu()
-                out[cid] = GaussianStatistics(mu_new.cpu(), cov.cpu(), stat.reg, centers=centers_new)
+                gmm_means_new = None
+                if getattr(stat, "gmm_means", None) is not None:
+                    gmm_means_new = self._apply_drift_to_points(
+                        stat.gmm_means,
+                        fb_norm,
+                        drift,
+                        base_temperature,
+                        top_k,
+                    ).cpu()
+                out[cid] = make_gaussian_statistics_like(
+                    stat,
+                    mu_new.cpu(),
+                    cov.cpu(),
+                    centers=centers_new,
+                    gmm_means=gmm_means_new,
+                )
                 continue
 
             # --- 协方差补偿：复用 global_eps，分块处理 ---
@@ -150,7 +165,22 @@ class HopfieldDistributionCompensator(BaseCompensator):
                     base_temperature,
                     top_k,
                 ).cpu()
-            out[cid] = GaussianStatistics(mu_new, cov_new, stat.reg, centers=centers_new)
+            gmm_means_new = None
+            if getattr(stat, "gmm_means", None) is not None:
+                gmm_means_new = self._apply_drift_to_points(
+                    stat.gmm_means,
+                    fb_norm,
+                    drift,
+                    base_temperature,
+                    top_k,
+                ).cpu()
+            out[cid] = make_gaussian_statistics_like(
+                stat,
+                mu_new,
+                cov_new,
+                centers=centers_new,
+                gmm_means=gmm_means_new,
+            )
 
         return out
 

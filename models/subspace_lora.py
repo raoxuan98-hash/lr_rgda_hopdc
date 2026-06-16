@@ -124,7 +124,9 @@ class SubspaceLoRA(BaseLearner):
             feature_combination_type=args['feature_combination_type'],
             hopfield_temp=args.get('hopfield_temp', 0.1),
             hopfield_topk=args.get('hopfield_topk', 1000),
-            rgda_num_centers=args.get('rgda_num_centers', 1))
+            rgda_num_centers=args.get(
+                'rgda_mc_num_centers', args.get('rgda_num_centers', 4)),
+            rgda_gmm_k=args.get('rgda_gmm_k', 4))
         
         self.classifier_reconstructor = ClassifierReconstructor(
             device=self._device,
@@ -132,10 +134,21 @@ class SubspaceLoRA(BaseLearner):
             qda_reg_alpha1=args['qda_reg_alpha1'],
             qda_reg_alpha2=args['qda_reg_alpha2'],
             qda_reg_alpha3=args['qda_reg_alpha3'],
-            rgda_num_centers=args.get('rgda_num_centers', 1),
-            rgda_train_iter=args.get('rgda_train_iter', 0),
+            rgda_num_centers=args.get('rgda_num_centers', 4),
+            rgda_train_iter=args.get('rgda_train_iter', 200),
             rgda_fit_lr=args.get('rgda_fit_lr', 0.01),
-            rgda_fit_samples_per_class=args.get('rgda_fit_samples_per_class', 0))
+            rgda_fit_samples_per_class=args.get('rgda_fit_samples_per_class', 16),
+            rgda_mc_num_centers=args.get(
+                'rgda_mc_num_centers', args.get('rgda_num_centers', 4)),
+            rgda_mc_train_iter=args.get(
+                'rgda_mc_train_iter', args.get('rgda_train_iter', 200)),
+            rgda_mc_fit_lr=args.get(
+                'rgda_mc_fit_lr', args.get('rgda_fit_lr', 0.01)),
+            rgda_mc_fit_samples_per_class=args.get(
+                'rgda_mc_fit_samples_per_class',
+                args.get('rgda_fit_samples_per_class', 16)),
+            rgda_gmm_sample_mode=args.get('rgda_gmm_sample_mode', 'mean'),
+            rgda_gmm_seed=args.get('rgda_gmm_seed', 42))
         
         # 获取特征维度，处理不同模型类型
         feat_dim = getattr(self.network.vit, 'feature_dim', 768)
