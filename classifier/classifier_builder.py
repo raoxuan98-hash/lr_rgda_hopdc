@@ -5,7 +5,12 @@ import logging
 import time
 from typing import Dict, Union, List
 
-from classifier.da_classifier_builder import LDAClassifierBuilder, LRRGDAClassifierBuilder, QDAClassifierBuilder
+from classifier.da_classifier_builder import (
+    LDAClassifierBuilder,
+    LDATopKLRRGDARerankBuilder,
+    LRRGDAClassifierBuilder,
+    QDAClassifierBuilder,
+)
 from classifier.ls_classifier_builder import LeastSquaresClassifierBuilder
 from classifier.tsvd_classifier_builder import TSVDClassifierBuilder
 from classifier.sgd_classifier_builder import SGDClassifierBuilder
@@ -86,6 +91,7 @@ class ClassifierReconstructor:
             kwargs.get('rgda_fit_samples_per_class', 16))
         self.rgda_gmm_sample_mode = kwargs.get('rgda_gmm_sample_mode', 'mean')
         self.rgda_gmm_seed = kwargs.get('rgda_gmm_seed', 42)
+        self.rgda_rerank_topk = kwargs.get('rgda_rerank_topk', 20)
         logging.info(
             "[ClassifierReconstructor] RGDA regularization alphas set to %s, %s, %s",
             self.rgda_alpha1,
@@ -141,6 +147,12 @@ class ClassifierReconstructor:
             "lrrgda_mc": "lr_rgda_mc",
             "multi_center_rgda": "lr_rgda_mc",
             "multicenter_rgda": "lr_rgda_mc",
+            "lr_rgda_rerank": "lr_rgda_rerank",
+            "lrrgda_rerank": "lr_rgda_rerank",
+            "lda_lr_rgda_rerank": "lr_rgda_rerank",
+            "lr_rgda_mc_rerank": "lr_rgda_mc_rerank",
+            "lrrgda_mc_rerank": "lr_rgda_mc_rerank",
+            "lda_lr_rgda_mc_rerank": "lr_rgda_mc_rerank",
             "qda": "qda",
             "rgda": "rgda_full",
             "full_rgda": "rgda_full",
@@ -159,6 +171,8 @@ class ClassifierReconstructor:
         display_names = {
             "lr_rgda": "LR-RGDA",
             "lr_rgda_mc": "LR-RGDA-MC",
+            "lr_rgda_rerank": "LDA-TopK-LR-RGDA",
+            "lr_rgda_mc_rerank": "LDA-TopK-LR-RGDA-MC",
             "rgda_full": "RGDA",
             "qda": "QDA",
             "lda": "LDA",
@@ -189,6 +203,37 @@ class ClassifierReconstructor:
 
         elif classifier_type == "lr_rgda_mc":
             return LRRGDAClassifierBuilder(
+                rgda_alpha1=self.rgda_alpha1,
+                rgda_alpha2=self.rgda_alpha2,
+                rgda_alpha3=self.rgda_alpha3,
+                low_rank=True,
+                num_centers=self.rgda_mc_num_centers,
+                train_iter=self.rgda_mc_train_iter,
+                fit_lr=self.rgda_mc_fit_lr,
+                fit_samples_per_class=self.rgda_mc_fit_samples_per_class,
+                fit_sample_mode=self.rgda_gmm_sample_mode,
+                fit_seed=self.rgda_gmm_seed,
+                device=self.device,
+            )
+
+        elif classifier_type == "lr_rgda_rerank":
+            return LDATopKLRRGDARerankBuilder(
+                lda_reg_alpha=self.lda_reg_alpha,
+                topk=self.rgda_rerank_topk,
+                rgda_alpha1=self.rgda_alpha1,
+                rgda_alpha2=self.rgda_alpha2,
+                rgda_alpha3=self.rgda_alpha3,
+                low_rank=True,
+                num_centers=1,
+                train_iter=0,
+                fit_samples_per_class=0,
+                device=self.device,
+            )
+
+        elif classifier_type == "lr_rgda_mc_rerank":
+            return LDATopKLRRGDARerankBuilder(
+                lda_reg_alpha=self.lda_reg_alpha,
+                topk=self.rgda_rerank_topk,
                 rgda_alpha1=self.rgda_alpha1,
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,

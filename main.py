@@ -167,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_gmm_k', type=int, default=4, help='Diagonal-GMM components saved per class for lr_rgda_mc replay.')
     gda.add_argument('--rgda_gmm_sample_mode', type=str, default='mean', choices=['mean', 'sample'], help='GMM replay mode for lr_rgda_mc: component means or diagonal-Gaussian samples.')
     gda.add_argument('--rgda_gmm_seed', type=int, default=42, help='Random seed for lr_rgda_mc GMM replay sampling.')
+    gda.add_argument('--rgda_rerank_topk', type=int, default=20, help='LDA coarse top-k size for LDA-TopK-LR-RGDA reranking classifiers.')
     
     aux = parser.add_argument_group('auxiliary', 'External / auxiliary dataset')
     aux.add_argument('--auxiliary_data_path', type=str, default='/data1/open_datasets', help='Root path of the auxiliary dataset.')
@@ -188,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
     interp.add_argument('--enable_weight_interpolation', action="store_true", default=False, help='Enable weight interpolation with previous network.')
     
     # 分类器参数
-    cls.add_argument('--classifier_types', type=str, nargs='+', default=['lr_rgda'], choices=['lr_rgda', 'lrrgda', 'low_rank_rgda', 'lr_rgda_mc', 'lrrgda_mc', 'multi_center_rgda', 'multicenter_rgda', 'rgda', 'rgda_full', 'full_rgda', 'qda', 'lda', 'sgd', 'ls', 'tsvd', 'ncm', 'cosine'], help='Classifier reconstruction methods. lr_rgda is the single-center analytic baseline; lr_rgda_mc adds multi-centers and GMM replay fitting.')
+    cls.add_argument('--classifier_types', type=str, nargs='+', default=['lr_rgda'], choices=['lr_rgda', 'lrrgda', 'low_rank_rgda', 'lr_rgda_mc', 'lrrgda_mc', 'multi_center_rgda', 'multicenter_rgda', 'lr_rgda_rerank', 'lrrgda_rerank', 'lda_lr_rgda_rerank', 'lr_rgda_mc_rerank', 'lrrgda_mc_rerank', 'lda_lr_rgda_mc_rerank', 'rgda', 'rgda_full', 'full_rgda', 'qda', 'lda', 'sgd', 'ls', 'tsvd', 'ncm', 'cosine'], help='Classifier reconstruction methods. lr_rgda is the single-center analytic baseline; lr_rgda_mc adds multi-centers and GMM replay fitting; *_rerank uses LDA top-k coarse ranking followed by LR-RGDA reranking.')
     
     return parser
 

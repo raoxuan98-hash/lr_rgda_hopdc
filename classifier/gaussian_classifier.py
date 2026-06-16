@@ -74,7 +74,11 @@ class LinearLDAClassifier(nn.Module):
 
         # === Step 3. 计算逆矩阵 ===
         cov_reg = cov_reg + 1e-6 * torch.eye(d, device=device)
-        cov_inv = torch.cholesky_inverse(cov_reg)
+        try:
+            cov_chol = torch.linalg.cholesky(cov_reg)
+            cov_inv = torch.cholesky_inverse(cov_chol)
+        except RuntimeError:
+            cov_inv = torch.linalg.pinv(cov_reg)
 
         # === Step 4. 权重 & 偏置解析解 ===
         priors = {cid: 1.0 / self.num_classes for cid in class_ids} if class_priors is None else class_priors
@@ -519,6 +523,60 @@ class LowRankGaussianDA(nn.Module):
         logits = affine_logits + quadratic_terms  # [B, C]
         
         return logits
+
+    def forward_selected(self, x: torch.Tensor, selected_indices: torch.Tensor) -> torch.Tensor:
+        """Score only selected class columns for each sample.
+
+        Args:
+            x: Feature tensor with shape [B, D].
+            selected_indices: Class-column indices with shape [B, K], as produced
+                by a coarse classifier over the same sorted class order.
+
+        Returns:
+            Selected LR-RGDA logits with shape [B, K].
+        """
+        x = x.to(self.device)
+        selected_indices = selected_indices.to(self.device).long()
+        B, D = x.shape
+        if selected_indices.dim() != 2 or selected_indices.size(0) != B:
+            raise ValueError(
+                f"selected_indices must have shape [B, K], got {tuple(selected_indices.shape)}")
+
+        expected_D = self._feature_dim.item()
+        if D != expected_D:
+            raise ValueError(
+                f"Input feature dimension {D} does not match expected dimension {expected_D}.")
+
+        if self.num_centers > 1:
+            weights = self.affine_weights[selected_indices]      # [B, K, M, D]
+            biases = self.affine_biases[selected_indices]        # [B, K, M]
+            affine = torch.einsum('bd,bkmd->bkm', x, weights) + biases
+
+            u_proj = self.U_eff_T_B_inv[selected_indices]        # [B, K, r, D]
+            z = torch.einsum('bd,bkrd->bkr', x, u_proj)
+            m_invs = self.M_invs[selected_indices]               # [B, K, r, r]
+            m_z = torch.einsum('bkr,bkrq->bkq', z, m_invs)
+            quad_base = 0.5 * (z * m_z).sum(dim=-1)              # [B, K]
+            center_z = self.center_z[selected_indices]           # [B, K, M, r]
+            cross = torch.einsum('bkr,bkmr->bkm', m_z, center_z)
+            quad_consts = self.quad_consts[selected_indices]     # [B, K, M]
+            per_center_logits = affine + quad_base.unsqueeze(-1) - cross + quad_consts
+            max_logits = per_center_logits.max(dim=-1, keepdim=True).values
+            logits = max_logits.squeeze(-1) + torch.log(
+                torch.exp(per_center_logits - max_logits).sum(dim=-1).clamp(min=1e-12))
+            return logits + self.cls_biases[selected_indices]
+
+        weights = self.affine_weights[selected_indices]          # [B, K, D]
+        biases = self.affine_biases[selected_indices]            # [B, K]
+        affine_logits = torch.einsum('bd,bkd->bk', x, weights) + biases
+
+        u_proj = self.U_eff_T_B_inv[selected_indices]            # [B, K, r, D]
+        u_mu = self.U_eff_T_B_inv_mu[selected_indices]           # [B, K, r]
+        u_c = torch.einsum('bd,bkrd->bkr', x, u_proj) - u_mu
+        m_invs = self.M_invs[selected_indices]                   # [B, K, r, r]
+        m_inv_u = torch.einsum('bkr,bkrq->bkq', u_c, m_invs)
+        quadratic_terms = 0.5 * (u_c * m_inv_u).sum(dim=-1)
+        return affine_logits + quadratic_terms
 
     def predict(self, x: torch.Tensor):
         return torch.argmax(self.forward(x), dim=1)

@@ -94,13 +94,19 @@ python main.py \
   --dataset cifar100_224 \
   --smart_defaults \
   --classifier_only_eval \
-  --classifier_types lr_rgda lr_rgda_mc lda ncm cosine
+  --classifier_types lda lr_rgda lr_rgda_rerank lr_rgda_mc lr_rgda_mc_rerank ncm cosine \
+  --rgda_rerank_topk 20
 ```
 
 In this mode, compensator variants such as `SeqFT + HopDC` are intentionally not
 created because there is no before/after backbone drift to estimate. The output
 therefore compares methods like `SeqFT + LR-RGDA`, `SeqFT + LR-RGDA-MC`, and
 `SeqFT + NCM` under the same fixed representation.
+
+The reranking classifiers implement the appendix inference-speed path:
+`lr_rgda_rerank` uses LDA to select a coarse top-k set, then scores only those
+classes with LR-RGDA; `lr_rgda_mc_rerank` does the same with the multi-center
+LR-RGDA-MC classifier.
 
 ## Organization
 
