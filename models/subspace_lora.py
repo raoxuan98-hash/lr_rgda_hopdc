@@ -22,6 +22,30 @@ from utils.inc_net import BaseNet
 from lora import compute_covariances
 import math
 
+LADA_16SHOT_EPOCHS = {
+    "aircraft": 40,
+    "fgvc-aircraft-2013b-variants102": 40,
+    "fgvc_aircraft": 40,
+    "caltech-101": 10,
+    "caltech101": 10,
+    "dtd": 30,
+    "eurosat": 100,
+    "eurosat_clip": 100,
+    "oxford-flower-102": 30,
+    "oxford_flower102": 30,
+    "flower102": 30,
+    "food-101": 5,
+    "food101": 5,
+    "mnist": 200,
+    "oxford-iiit-pets": 10,
+    "oxford_pets": 10,
+    "stanford-cars": 30,
+    "cars196": 30,
+    "cars196_224": 30,
+    "sun397": 10,
+}
+
+
 class GPUMemoryMonitor:
     """GPU显存监控器，用于跟踪和记录显存使用情况"""
     
@@ -101,7 +125,10 @@ class SubspaceLoRA(BaseLearner):
 
         self.batch_size: int = args["batch_size"]
         self.iterations: int = args["iterations"]
+        self.base_iterations: int = args["iterations"]
         self.warmup_steps: int = int(args["warmup_ratio"] * self.iterations)
+        self.lr_scheduler: str = args.get("lr_scheduler", "warmup_cosine")
+        self.per_dataset_iterations: str = args.get("per_dataset_iterations", "none")
 
         self.lrate: float = args["lrate"]
         self.weight_decay: float = args["weight_decay"]
@@ -266,6 +293,42 @@ class SubspaceLoRA(BaseLearner):
         
         self.task_count += 1
 
+    def _normalized_dataset_name(self, dataset_name: str) -> str:
+        return str(dataset_name).lower().replace("_split_", "-split-")
+
+    def _maybe_update_task_iterations(self, dataset_name: str, train_set_size: int) -> None:
+        """Apply optional per-dataset training budgets before optimizer creation."""
+        self.iterations = int(self.base_iterations)
+        if self.per_dataset_iterations == "none":
+            self.warmup_steps = int(self.args["warmup_ratio"] * self.iterations)
+            return
+
+        if self.per_dataset_iterations != "lada_16shot":
+            raise ValueError(f"Unsupported per_dataset_iterations: {self.per_dataset_iterations}")
+
+        normalized = self._normalized_dataset_name(dataset_name)
+        base_name = normalized.split("-split-")[0]
+        epochs = LADA_16SHOT_EPOCHS.get(normalized, LADA_16SHOT_EPOCHS.get(base_name))
+        if epochs is None:
+            logging.warning(
+                "No LADA 16-shot epoch budget for dataset '%s'; using base iterations=%d.",
+                dataset_name,
+                self.base_iterations,
+            )
+            self.warmup_steps = int(self.args["warmup_ratio"] * self.iterations)
+            return
+
+        steps_per_epoch = max(1, math.ceil(int(train_set_size) / max(1, self.batch_size)))
+        self.iterations = max(1, int(epochs) * steps_per_epoch)
+        self.warmup_steps = int(self.args["warmup_ratio"] * self.iterations)
+        logging.info(
+            "[Schedule] LADA 16-shot budget for %s: epochs=%d, steps/epoch=%d, iterations=%d",
+            dataset_name,
+            epochs,
+            steps_per_epoch,
+            self.iterations,
+        )
+
     def incremental_train(self, data_manager) -> None:
         start_time = time.time()
         task_id = self.current_task_id
@@ -335,6 +398,7 @@ class SubspaceLoRA(BaseLearner):
             self._known_classes,
             self._total_classes,
             dataset_name.lower())
+        self._maybe_update_task_iterations(dataset_name, len(train_set))
 
         if self.args.get('classifier_only_eval', False):
             logging.info(
@@ -374,11 +438,13 @@ class SubspaceLoRA(BaseLearner):
 
         """Create optimizer according to ``self.optimizer_type``."""
         distill_params = filter(lambda p: p.requires_grad, self.distillator.parameters())
+        fc_lr = 1e-3 if self.optimizer_type == "adamw" else 10 * self.lrate
+        distill_lr = 10 * self.lrate
 
         param_groups = [
             {"params": lora_params, "lr": self.lrate, "weight_decay": self.weight_decay},
-            {"params": fc_params, "lr": 1e-3 if self.optimizer_type == "adamw" else 10 * self.lrate, "weight_decay": self.weight_decay},
-            {"params": distill_params, "lr": 10 * self.lrate, "weight_decay": self.weight_decay},
+            {"params": fc_params, "lr": fc_lr, "weight_decay": self.weight_decay},
+            {"params": distill_params, "lr": distill_lr, "weight_decay": self.weight_decay},
         ]
 
         if self.optimizer_type == "sgd":
@@ -389,6 +455,22 @@ class SubspaceLoRA(BaseLearner):
             optimizer = optim.RMSprop(param_groups)
         else:
             raise ValueError(f"Unsupported optimizer: {self.optimizer_type}")
+
+        if self.lr_scheduler == "onecycle":
+            logging.info(
+                "[Schedule] Using OneCycleLR: total_steps=%d, max_lr=%s",
+                self.iterations,
+                [self.lrate, fc_lr, distill_lr],
+            )
+            scheduler = optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=[self.lrate, fc_lr, distill_lr],
+                total_steps=max(1, self.iterations),
+            )
+            return optimizer, scheduler
+
+        if self.lr_scheduler != "warmup_cosine":
+            raise ValueError(f"Unsupported lr_scheduler: {self.lr_scheduler}")
 
         def lora_lr_lambda(step):
             if step < self.warmup_steps:
