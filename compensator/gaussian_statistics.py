@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 
 def cholesky_stable(matrix: torch.Tensor, reg: float = 1e-5) -> torch.Tensor:
@@ -37,9 +39,44 @@ def cholesky_stable_with_fallback(matrix: torch.Tensor, reg: float = 1e-5) -> to
     except RuntimeError as e:
         return cholesky_manual_stable(matrix, reg)
 
+def kmeans_centers(x: torch.Tensor, num_centers: int, n_iter: int = 20, seed: int = 42) -> torch.Tensor:
+    """Return a fixed number of per-class centers for compact multi-centroid RGDA."""
+    unique_x = torch.unique(x, dim=0)
+    if unique_x.size(0) <= num_centers:
+        if unique_x.size(0) == num_centers:
+            return unique_x.clone()
+        repeat = (num_centers + unique_x.size(0) - 1) // unique_x.size(0)
+        return unique_x.repeat((repeat, 1))[:num_centers].clone()
+
+    generator = torch.Generator(device=x.device).manual_seed(seed)
+    idx = torch.randperm(x.size(0), generator=generator, device=x.device)[:num_centers]
+    centers = x[idx].clone()
+
+    for _ in range(n_iter):
+        dists = torch.cdist(x, centers)
+        labels = dists.argmin(dim=1)
+        new_centers = centers.clone()
+        for center_idx in range(num_centers):
+            mask = labels == center_idx
+            if mask.any():
+                new_centers[center_idx] = x[mask].mean(dim=0)
+        if torch.allclose(centers, new_centers, atol=1e-6):
+            break
+        centers = new_centers
+
+    return centers
+
+
 class GaussianStatistics:
     """Container for per-class Gaussian statistics."""
-    def __init__(self, mean: torch.Tensor, cov: torch.Tensor, reg: float = 1e-4, cholesky = False):
+    def __init__(
+        self,
+        mean: torch.Tensor,
+        cov: torch.Tensor,
+        reg: float = 1e-4,
+        cholesky = False,
+        centers: Optional[torch.Tensor] = None,
+    ):
         if mean.dim() == 2 and mean.size(0) == 1:
             mean = mean.squeeze(0)
         if mean.dim() != 1:
@@ -48,6 +85,7 @@ class GaussianStatistics:
         self.mean = mean
         self.cov = cov
         self.reg = reg
+        self.centers = centers
 
         if cholesky:
             self.L = cholesky_stable_with_fallback(cov, reg=reg)
@@ -59,6 +97,8 @@ class GaussianStatistics:
 
         self.mean = self.mean.to(device)
         self.cov = self.cov.to(device)
+        if self.centers is not None:
+            self.centers = self.centers.to(device)
         if self.L is not None:
             self.L = self.L.to(device)
         return self

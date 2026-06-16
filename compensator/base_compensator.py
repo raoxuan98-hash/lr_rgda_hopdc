@@ -103,7 +103,12 @@ class RFFDriftCompensator(BaseCompensator):
             mu_new = mu + drift_mu  # (d,)
 
             if not self.compensate_cov:
-                out[cid] = GaussianStatistics(mu_new.cpu(), cov.cpu(), stat.reg)
+                centers_new = None
+                if getattr(stat, "centers", None) is not None:
+                    centers = stat.centers.to(self.device)
+                    phi_centers = self._rff_map(F.normalize(centers, dim=1))
+                    centers_new = (centers + phi_centers @ W).cpu()
+                out[cid] = GaussianStatistics(mu_new.cpu(), cov.cpu(), stat.reg, centers=centers_new)
                 continue
 
             # --- 协方差补偿：采样 + 残差预测 ---
@@ -135,7 +140,12 @@ class RFFDriftCompensator(BaseCompensator):
             cov_est = torch.cov(compensated_samples.T)
             mu_final = 0.9 * mu_est + 0.1 * mu_new.cpu()
             cov_final = 0.9 * cov_est + 0.1 * cov.cpu()
-            out[cid] = GaussianStatistics(mu_final, cov_final, stat.reg)
+            centers_new = None
+            if getattr(stat, "centers", None) is not None:
+                centers = stat.centers.to(self.device)
+                phi_centers = self._rff_map(F.normalize(centers, dim=1))
+                centers_new = (centers + phi_centers @ W).cpu()
+            out[cid] = GaussianStatistics(mu_final, cov_final, stat.reg, centers=centers_new)
 
         # 清理缓存
         if torch.cuda.is_available():

@@ -69,7 +69,10 @@ class WeakNonlinearCompensator(BaseCompensator):
             transformed = self.net(samples)
             mu_new = transformed.mean(0).cpu()
             cov_new = torch.cov(transformed.T).cpu()
-            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg)
+            centers_new = None
+            if getattr(s, "centers", None) is not None:
+                centers_new = self.net(s.centers.to(device)).cpu()
+            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg, centers=centers_new)
             
             # 清理临时变量
             del transformed, mu_new, cov_new

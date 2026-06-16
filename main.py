@@ -159,6 +159,10 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_alpha1', '--qda_reg_alpha1', dest='qda_reg_alpha1', type=float, default=0.20, help='RGDA class-specific covariance weight alpha1.')
     gda.add_argument('--rgda_alpha2', '--qda_reg_alpha2', dest='qda_reg_alpha2', type=float, default=2.00, help='RGDA shared covariance weight alpha2.')
     gda.add_argument('--rgda_alpha3', '--qda_reg_alpha3', dest='qda_reg_alpha3', type=float, default=0.50, help='RGDA identity regularization weight alpha3.')
+    gda.add_argument('--rgda_num_centers', type=int, default=1, help='Number of per-class centers for multi-centroid LR-RGDA. 1 keeps the analytic single-center classifier.')
+    gda.add_argument('--rgda_train_iter', type=int, default=0, help='Affine-only LR-RGDA fine-tuning iterations. 0 disables classifier fine-tuning.')
+    gda.add_argument('--rgda_fit_lr', type=float, default=0.01, help='Learning rate for affine-only LR-RGDA classifier fine-tuning.')
+    gda.add_argument('--rgda_fit_samples_per_class', type=int, default=0, help='Pseudo-samples per class drawn from Gaussian statistics for LR-RGDA fine-tuning. 0 disables fit data generation.')
     
     aux = parser.add_argument_group('auxiliary', 'External / auxiliary dataset')
     aux.add_argument('--auxiliary_data_path', type=str, default='/data1/open_datasets', help='Root path of the auxiliary dataset.')

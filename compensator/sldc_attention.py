@@ -28,6 +28,18 @@ class HopfieldDistributionCompensator(BaseCompensator):
         self.drift_vectors = self.features_after - self.features_before
         self.is_trained = True
 
+    def _apply_drift_to_points(self, points, fb_norm, drift, base_temperature, top_k):
+        points = points.to(self.device)
+        points_norm = F.normalize(points, dim=1)
+        att = F.softmax(torch.matmul(points_norm, fb_norm.t()) / base_temperature, dim=1)
+        if top_k > 0 and top_k < fb_norm.size(0):
+            k = min(top_k, fb_norm.size(0))
+            top_vals, top_indices = torch.topk(att, k, dim=1, sorted=False)
+            mask = torch.zeros_like(att)
+            mask.scatter_(1, top_indices, top_vals)
+            att = mask / mask.sum(dim=1, keepdim=True).clamp(min=1e-12)
+        return points + torch.einsum('bn,nd->bd', att, drift)
+
     @torch.no_grad()
     def compensate(
         self,
@@ -56,8 +68,15 @@ class HopfieldDistributionCompensator(BaseCompensator):
             cov = stat.cov.to(self.device)
 
             # --- 均值补偿 ---
-            mu_norm = F.normalize(mu.unsqueeze(0), dim=1)
-            similarities = torch.matmul(fb_norm, mu_norm.t()).squeeze(1)  # [N]
+            mu_new = self._apply_drift_to_points(
+                mu.unsqueeze(0),
+                fb_norm,
+                drift,
+                base_temperature,
+                top_k,
+            ).squeeze(0)
+            drift_c = mu_new - mu
+            similarities = torch.matmul(fb_norm, F.normalize(mu.unsqueeze(0), dim=1).t()).squeeze(1)  # [N]
 
             # ====== Logging: detailed similarity stats ======
             if logger.isEnabledFor(logging.INFO):
@@ -84,18 +103,17 @@ class HopfieldDistributionCompensator(BaseCompensator):
                 # )
             # ==============================================
 
-            attention_weights = F.softmax(similarities / base_temperature, dim=0)
-
-            if top_k > 0 and top_k < N:
-                top_vals, top_indices = torch.topk(attention_weights, top_k, sorted=False)
-                mask = torch.zeros_like(attention_weights)
-                mask[top_indices] = top_vals
-                attention_weights = mask / mask.sum().clamp(min=1e-12)
-
-            drift_c = (attention_weights.unsqueeze(1) * drift).sum(dim=0)
-
             if not self.compensate_cov:
-                out[cid] = GaussianStatistics((mu + drift_c).cpu(), cov.cpu(), stat.reg)
+                centers_new = None
+                if getattr(stat, "centers", None) is not None:
+                    centers_new = self._apply_drift_to_points(
+                        stat.centers,
+                        fb_norm,
+                        drift,
+                        base_temperature,
+                        top_k,
+                    ).cpu()
+                out[cid] = GaussianStatistics(mu_new.cpu(), cov.cpu(), stat.reg, centers=centers_new)
                 continue
 
             # --- 协方差补偿：复用 global_eps，分块处理 ---
@@ -123,7 +141,16 @@ class HopfieldDistributionCompensator(BaseCompensator):
             compensated_samples = torch.cat(compensated_samples, dim=0)
             mu_new = 0.9 * compensated_samples.mean(dim=0) + 0.1 * mu.cpu()
             cov_new = 0.9 * torch.cov(compensated_samples.T) + 0.1 * cov.cpu()
-            out[cid] = GaussianStatistics(mu_new, cov_new, stat.reg)
+            centers_new = None
+            if getattr(stat, "centers", None) is not None:
+                centers_new = self._apply_drift_to_points(
+                    stat.centers,
+                    fb_norm,
+                    drift,
+                    base_temperature,
+                    top_k,
+                ).cpu()
+            out[cid] = GaussianStatistics(mu_new, cov_new, stat.reg, centers=centers_new)
 
         return out
 

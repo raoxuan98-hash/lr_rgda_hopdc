@@ -34,5 +34,6 @@ class LinearCompensator(BaseCompensator):
         for cid, s in stats_dict.items():
             mu_new = s.mean @ W
             cov_new = WT @ s.cov @ W + 1e-3 * torch.eye(s.cov.size(0))
-            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg)
+            centers_new = s.centers @ W if getattr(s, "centers", None) is not None else None
+            out[cid] = GaussianStatistics(mu_new, cov_new, s.reg, centers=centers_new)
         return out

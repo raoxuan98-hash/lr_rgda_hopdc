@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from compensator.gaussian_statistics import GaussianStatistics, LowRankGaussianStatistics
+from compensator.gaussian_statistics import GaussianStatistics, LowRankGaussianStatistics, kmeans_centers
 from compensator.sldc_linear import LinearCompensator
 from compensator.sldc_weaknonlinear import WeakNonlinearCompensator
 from compensator.sldc_attention import HopfieldDistributionCompensator
@@ -33,13 +33,15 @@ class DistributionCompensator:
         compensator_types = None,
         feature_combination_type: str = "combined",
         hopfield_temp: float = 0.1,
-        hopfield_topk: int = 1000
+        hopfield_topk: int = 1000,
+        rgda_num_centers: int = 1,
     ):
         self.device = device
         self.auxiliary_data_size = auxiliary_data_size
         self.feature_combination_type = feature_combination_type
         self.hopfield_temp = hopfield_temp
         self.hopfield_topk = hopfield_topk
+        self.rgda_num_centers = max(1, int(rgda_num_centers))
         
         # 补偿器类型控制
         if compensator_types is None:
@@ -250,7 +252,14 @@ class DistributionCompensator:
             if low_rank:
                 stats[int(lbl.item())] = LowRankGaussianStatistics(mu, cov)
             else:
-                stats[int(lbl.item())] = GaussianStatistics(mu, cov)
+                centers = None
+                if self.rgda_num_centers > 1:
+                    centers = kmeans_centers(
+                        feats_class,
+                        self.rgda_num_centers,
+                        seed=42 + int(lbl.item()),
+                    )
+                stats[int(lbl.item())] = GaussianStatistics(mu, cov, centers=centers)
             
         return stats
     

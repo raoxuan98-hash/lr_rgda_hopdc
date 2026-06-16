@@ -53,6 +53,33 @@ python main.py --dataset imagenet-a --smart_defaults --classifier_types lr_rgda
 python main.py --dataset vtab --smart_defaults --classifier_types lr_rgda
 ```
 
+## Optional LR-RGDA Enhancements
+
+The default classifier remains the analytic single-center LR-RGDA used by the
+paper-facing entry. Two optional classifier-side extensions are available for
+ablation runs:
+
+```bash
+python main.py \
+  --dataset cifar100_224 \
+  --smart_defaults \
+  --classifier_types lr_rgda \
+  --rgda_num_centers 4 \
+  --rgda_train_iter 200 \
+  --rgda_fit_samples_per_class 16
+```
+
+- `--rgda_num_centers`: stores multiple compact per-class centers and evaluates
+  LR-RGDA with a log-sum-exp over centers.
+- `--rgda_train_iter`: enables affine-only classifier fine-tuning while keeping
+  the covariance / low-rank structure fixed.
+- `--rgda_fit_samples_per_class`: draws compact pseudo-features from the stored
+  Gaussian statistics for classifier fine-tuning. A value of `0` disables fit
+  data generation.
+
+These flags are disabled by default and should be reported separately from the
+single-seed main table until multi-seed confidence intervals are rerun.
+
 ## Organization
 
 - `classifier/`: LR-RGDA, full RGDA, LDA, SGD and other classifier builders.

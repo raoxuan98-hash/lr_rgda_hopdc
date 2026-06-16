@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from typing import Dict
+from typing import Dict, Optional
 from compensator.gaussian_statistics import GaussianStatistics
 
 
@@ -232,7 +232,8 @@ class LowRankGaussianDA(nn.Module):
         qda_reg_alpha2: float = 1.0,
         qda_reg_alpha3: float = 1.0,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        batch_size: int = 20 # 添加批次大小参数
+        batch_size: int = 20, # 添加批次大小参数
+        center_means: Optional[Dict[int, torch.Tensor]] = None,
     ):
         super().__init__()
         init_device = torch.device(device)
@@ -242,6 +243,11 @@ class LowRankGaussianDA(nn.Module):
         self.num_classes = len(self.class_ids)
         self.rank = rank
         self.batch_size = batch_size
+        self.num_centers = 1
+        if center_means is not None:
+            self.num_centers = int(center_means[self.class_ids[0]].shape[0])
+            logging.info(
+                f"[Init] LowRankGaussianDA multi-center mode: centers/class={self.num_centers}")
         
         logging.info(f"[Init] Starting batched LowRankGaussianDA init on {device}. Rank={rank}, BatchSize={batch_size}")
         
@@ -380,6 +386,49 @@ class LowRankGaussianDA(nn.Module):
         # 预计算 U_eff^T B^{-1} 用于快速计算 u_c
         # U_eff: [C, D, r], A_inv: [D, D] -> U_eff^T B^{-1}: [C, r, D]
         U_eff_T_B_inv = torch.einsum('cdr,dj->crj', U_eff, A_inv)  # [C, r, D]
+
+        if center_means is not None:
+            affine_weights = []
+            affine_biases = []
+            center_z = []
+            quad_consts = []
+            for class_index, cid in enumerate(self.class_ids):
+                centers = center_means[cid].float().to(init_device)
+                if centers.shape[0] != self.num_centers:
+                    raise ValueError(
+                        f"Class {cid} has {centers.shape[0]} centers; expected {self.num_centers}")
+
+                w_j = torch.einsum('md,di->mi', centers, A_inv)
+                b_j = -0.5 * (centers * w_j).sum(dim=1)
+                z_j = torch.einsum('rd,md->mr', U_eff_T_B_inv[class_index], centers)
+                M_z_j = torch.einsum('mr,rk->mk', z_j, M_inv[class_index])
+                qconst_j = 0.5 * (z_j * M_z_j).sum(dim=1)
+
+                affine_weights.append(w_j)
+                affine_biases.append(b_j)
+                center_z.append(z_j)
+                quad_consts.append(qconst_j)
+
+            cls_biases = -0.5 * total_logdet + log_priors
+            self.register_buffer("affine_weights", torch.stack(affine_weights, dim=0))
+            self.register_buffer("affine_biases", torch.stack(affine_biases, dim=0))
+            self.register_buffer("center_z", torch.stack(center_z, dim=0))
+            self.register_buffer("quad_consts", torch.stack(quad_consts, dim=0))
+            self.register_buffer("cls_biases", cls_biases)
+            self.register_buffer("U_eff_T_B_inv", U_eff_T_B_inv)
+            self.register_buffer("M_invs", M_inv)
+            self.register_buffer("_feature_dim", torch.tensor(D))
+            self.register_buffer("_rank", torch.tensor(rank))
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            logging.info(f"[Init] Multi-center LowRankGaussianDA initialization completed. ")
+            logging.info(f"[Init]   affine_weights: {tuple(self.affine_weights.shape)}")
+            logging.info(f"[Init]   affine_biases: {tuple(self.affine_biases.shape)}")
+            logging.info(f"[Init]   center_z: {tuple(self.center_z.shape)}")
+            logging.info(f"[Init]   quad_consts: {tuple(self.quad_consts.shape)}")
+            return
         
         # 预计算 U_eff^T B^{-1} μ_c 用于快速计算 u_c 的常数部分
         U_eff_T_B_inv_mu = torch.einsum('crd,cd->cr', U_eff_T_B_inv, means)  # [C, r]
@@ -429,6 +478,22 @@ class LowRankGaussianDA(nn.Module):
         if D != expected_D:
             raise ValueError(f"Input feature dimension {D} does not match expected dimension {expected_D}. "
                            f"Please check your input data.")
+
+        if self.num_centers > 1:
+            w_flat = self.affine_weights.reshape(-1, self.affine_weights.shape[-1])
+            b_flat = self.affine_biases.reshape(-1)
+            affine = F.linear(x, w_flat, b_flat).reshape(B, self.num_classes, self.num_centers)
+
+            z = torch.einsum('crd,bd->bcr', self.U_eff_T_B_inv, x)
+            M_z = torch.einsum('bcr,crk->bck', z, self.M_invs)
+            quad_base = 0.5 * (z * M_z).sum(dim=-1)
+            cross = torch.einsum('bcr,cmr->bcm', M_z, self.center_z)
+            quadratic_terms = quad_base.unsqueeze(-1) - cross + self.quad_consts.unsqueeze(0)
+            per_center_logits = affine + quadratic_terms
+            max_logits = per_center_logits.max(dim=-1, keepdim=True).values
+            logits = max_logits.squeeze(-1) + torch.log(
+                torch.exp(per_center_logits - max_logits).sum(dim=-1).clamp(min=1e-12))
+            return logits + self.cls_biases.unsqueeze(0)
         
         # === 1. 计算仿射部分 L_c(x) = w_c^T x + b_c ===
         # 使用预计算的权重和偏置
@@ -459,12 +524,51 @@ class LowRankGaussianDA(nn.Module):
 
     def predict_proba(self, x: torch.Tensor):
         return F.softmax(self.forward(x), dim=1)
+
+    def fit(self, features: torch.Tensor, labels: torch.Tensor, iterations: int = 200, lr: float = 0.01, verbose: bool = True):
+        """Fine-tune affine LR-RGDA parameters while keeping covariance terms fixed."""
+        if iterations <= 0:
+            return
+
+        features = features.to(self.device)
+        labels = labels.to(self.device)
+        self.affine_weights = nn.Parameter(self.affine_weights.detach().clone())
+        self.affine_biases = nn.Parameter(self.affine_biases.detach().clone())
+
+        optimizer = torch.optim.AdamW([self.affine_weights, self.affine_biases], lr=lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=iterations, eta_min=lr / 10)
+
+        self.train()
+        for step in range(iterations):
+            logits = self.forward(features)
+            loss = F.cross_entropy(logits, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+
+            if verbose and (step == 0 or (step + 1) % max(1, iterations // 5) == 0):
+                acc = logits.argmax(dim=1).eq(labels).float().mean().item() * 100
+                logging.info(
+                    f"LowRankGaussianDA-fit [{step + 1}/{iterations}] "
+                    f"loss={loss.item():.4f} acc={acc:.1f}%")
+
+        weights = self.affine_weights.detach()
+        biases = self.affine_biases.detach()
+        del self.affine_weights
+        del self.affine_biases
+        self.register_buffer("affine_weights", weights)
+        self.register_buffer("affine_biases", biases)
+        self.eval()
     
     def get_affine_classifier(self):
         """
         返回仅使用仿射部分的线性分类器
         用于分析或单独使用线性部分
         """
+        if self.num_centers > 1:
+            raise NotImplementedError("Multi-center LR-RGDA has per-center affine parameters.")
         affine_classifier = nn.Linear(self.affine_weights.size(1), self.affine_weights.size(0), bias=True)
         affine_classifier.weight.data = self.affine_weights.clone()
         affine_classifier.bias.data = self.affine_biases.clone()
@@ -476,6 +580,8 @@ class LowRankGaussianDA(nn.Module):
         分析仿射部分和二次修正部分的贡献
         返回各部分的详细分解
         """
+        if self.num_centers > 1:
+            raise NotImplementedError("Component analysis is only implemented for single-center LR-RGDA.")
         x = x.to(self.device)
         B, D = x.shape
         
@@ -509,8 +615,9 @@ class LowRankGaussianDA(nn.Module):
             'feature_dim': self._feature_dim.item(),
             'rank': self._rank.item(),
             'num_classes': self.num_classes,
+            'num_centers': self.num_centers,
             'affine_weights_shape': tuple(self.affine_weights.shape),
             'affine_biases_shape': tuple(self.affine_biases.shape),
             'U_eff_T_B_inv_shape': tuple(self.U_eff_T_B_inv.shape),
-            'U_eff_T_B_inv_mu_shape': tuple(self.U_eff_T_B_inv_mu.shape),
+            'U_eff_T_B_inv_mu_shape': tuple(self.U_eff_T_B_inv_mu.shape) if hasattr(self, 'U_eff_T_B_inv_mu') else None,
             'M_invs_shape': tuple(self.M_invs.shape)}

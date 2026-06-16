@@ -75,6 +75,10 @@ class ClassifierReconstructor:
         self.qda_reg_alpha1 = self.rgda_alpha1
         self.qda_reg_alpha2 = self.rgda_alpha2
         self.qda_reg_alpha3 = self.rgda_alpha3
+        self.rgda_num_centers = kwargs.get('rgda_num_centers', 1)
+        self.rgda_train_iter = kwargs.get('rgda_train_iter', 0)
+        self.rgda_fit_lr = kwargs.get('rgda_fit_lr', 0.01)
+        self.rgda_fit_samples_per_class = kwargs.get('rgda_fit_samples_per_class', 0)
         logging.info(
             "[ClassifierReconstructor] RGDA regularization alphas set to %s, %s, %s",
             self.rgda_alpha1,
@@ -165,6 +169,10 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
+                num_centers=self.rgda_num_centers,
+                train_iter=self.rgda_train_iter,
+                fit_lr=self.rgda_fit_lr,
+                fit_samples_per_class=self.rgda_fit_samples_per_class,
                 device=self.device,
             )
 
@@ -182,6 +190,10 @@ class ClassifierReconstructor:
                 qda_reg_alpha1=self.qda_reg_alpha1,
                 qda_reg_alpha2=self.qda_reg_alpha2,
                 qda_reg_alpha3=self.qda_reg_alpha3,
+                num_centers=self.rgda_num_centers,
+                train_iter=self.rgda_train_iter,
+                fit_lr=self.rgda_fit_lr,
+                fit_samples_per_class=self.rgda_fit_samples_per_class,
                 device=self.device,
             )
 
