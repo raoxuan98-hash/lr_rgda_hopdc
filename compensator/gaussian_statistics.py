@@ -1,4 +1,3 @@
-import logging
 from typing import Optional
 
 import torch
@@ -235,7 +234,13 @@ def fit_diag_gmm_statistics(
     seed: int = 42,
     reg: float = 1e-6,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Fit a compact diagonal GMM to one class of features."""
+    """Estimate compact diagonal-GMM statistics with deterministic torch k-means.
+
+    sklearn's diagonal GaussianMixture can be very slow or unstable for
+    high-dimensional frozen-backbone features. For LR-RGDA replay we only need a
+    compact multi-modal summary, so k-means component assignments plus per
+    component diagonal variances are the pragmatic default.
+    """
     x = x.detach().float().cpu()
     actual_k = max(1, min(int(num_components), x.size(0)))
 
@@ -243,32 +248,18 @@ def fit_diag_gmm_statistics(
         var = x.var(dim=0, unbiased=False).clamp(min=reg)
         return x.mean(dim=0, keepdim=True), var.unsqueeze(0), torch.ones(1)
 
-    try:
-        from sklearn.mixture import GaussianMixture
-
-        gmm = GaussianMixture(
-            n_components=actual_k,
-            covariance_type="diag",
-            random_state=int(seed),
-            reg_covar=float(reg),
-        )
-        gmm.fit(x.numpy())
-        means = torch.from_numpy(gmm.means_).float()
-        diag_vars = torch.from_numpy(gmm.covariances_).float().clamp(min=reg)
-        weights = torch.from_numpy(gmm.weights_).float()
-        return means, diag_vars, weights
-    except Exception as exc:
-        logging.warning("Falling back to torch k-means diagonal GMM stats: %s", exc)
-        centers = kmeans_centers(x, actual_k, seed=seed)
-        labels = torch.cdist(x, centers).argmin(dim=1)
-        diag_vars = []
-        weights = []
-        for comp_idx in range(actual_k):
-            mask = labels == comp_idx
-            feats = x[mask] if mask.any() else centers[comp_idx].unsqueeze(0)
-            diag_vars.append(feats.var(dim=0, unbiased=False).clamp(min=reg))
-            weights.append(float(feats.size(0)) / float(x.size(0)))
-        return centers, torch.stack(diag_vars), torch.tensor(weights).float()
+    centers = kmeans_centers(x, actual_k, seed=seed)
+    labels = torch.cdist(x, centers).argmin(dim=1)
+    diag_vars = []
+    weights = []
+    for comp_idx in range(actual_k):
+        mask = labels == comp_idx
+        feats = x[mask] if mask.any() else centers[comp_idx].unsqueeze(0)
+        diag_vars.append(feats.var(dim=0, unbiased=False).clamp(min=reg))
+        weights.append(float(feats.size(0)) / float(x.size(0)))
+    weights_t = torch.tensor(weights).float()
+    weights_t = weights_t / weights_t.sum().clamp(min=1e-12)
+    return centers, torch.stack(diag_vars), weights_t
 
 class LowRankGaussianStatistics:
     def __init__(
