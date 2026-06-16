@@ -58,7 +58,7 @@ python main.py --dataset vtab --smart_defaults --classifier_types lr_rgda
 The default `lr_rgda` classifier remains the analytic single-center LR-RGDA
 baseline. The optional `lr_rgda_mc` classifier can be evaluated in the same
 backbone-training run; it uses multiple per-class centers and affine-only
-classifier fitting from compact diagonal-GMM replay statistics.
+classifier fitting from compact GMM replay statistics.
 
 ```bash
 python main.py \
@@ -72,11 +72,14 @@ python main.py \
 - `lr_rgda_mc`: default `--rgda_mc_num_centers 4`,
   `--rgda_mc_train_iter 200`, `--rgda_gmm_k 4`,
   `--rgda_mc_fit_samples_per_class 16`.
+- `--rgda_gmm_backend sklearn_spherical`: fits sklearn spherical GMMs per class,
+  matching the `project_clip_continual_learning/main_joint.py` replay protocol.
+  Use `--rgda_gmm_backend kmeans_diag` only as a faster deterministic fallback.
 - `--rgda_gmm_sample_mode mean`: repeats fitted GMM component means for compact
   replay; this is the default because it has been more stable than stochastic
   GMM samples in recent classifier-replay experiments.
-- `--rgda_gmm_sample_mode sample`: samples from the stored diagonal-Gaussian GMM
-  components when stochastic replay is explicitly desired.
+- `--rgda_gmm_sample_mode sample`: samples from the stored GMM components when
+  stochastic replay is explicitly desired.
 
 Report `lr_rgda_mc` separately from the current single-seed main table until
 multi-seed confidence intervals are rerun.

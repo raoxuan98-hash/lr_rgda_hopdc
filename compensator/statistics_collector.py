@@ -11,6 +11,7 @@ from compensator.gaussian_statistics import (
     GaussianStatistics,
     LowRankGaussianStatistics,
     fit_diag_gmm_statistics,
+    fit_spherical_gmm_statistics,
     kmeans_centers,
 )
 
@@ -29,11 +30,15 @@ class DistributionStatisticsCollector:
         feature_combination_type: str = "combined",
         rgda_num_centers: int = 1,
         rgda_gmm_k: int = 4,
+        rgda_gmm_backend: str = "sklearn_spherical",
     ):
         self.device = device
         self.feature_combination_type = feature_combination_type
         self.rgda_num_centers = max(1, int(rgda_num_centers))
         self.rgda_gmm_k = max(0, int(rgda_gmm_k))
+        self.rgda_gmm_backend = str(rgda_gmm_backend).lower()
+        if self.rgda_gmm_backend not in {"sklearn_spherical", "kmeans_diag"}:
+            raise ValueError(f"Unsupported rgda_gmm_backend: {rgda_gmm_backend}")
         self.aux_loader: Optional[DataLoader] = None
         self.feature_dim: Optional[int] = None
 
@@ -213,11 +218,18 @@ class DistributionStatisticsCollector:
 
             gmm_means, gmm_diag_vars, gmm_weights = None, None, None
             if self.rgda_gmm_k > 0:
-                gmm_means, gmm_diag_vars, gmm_weights = fit_diag_gmm_statistics(
-                    feats_class,
-                    self.rgda_gmm_k,
-                    seed=1042 + int(lbl.item()),
-                )
+                if self.rgda_gmm_backend == "sklearn_spherical":
+                    gmm_means, gmm_diag_vars, gmm_weights = fit_spherical_gmm_statistics(
+                        feats_class,
+                        self.rgda_gmm_k,
+                        seed=42,
+                    )
+                else:
+                    gmm_means, gmm_diag_vars, gmm_weights = fit_diag_gmm_statistics(
+                        feats_class,
+                        self.rgda_gmm_k,
+                        seed=1042 + int(lbl.item()),
+                    )
 
             stats[int(lbl.item())] = GaussianStatistics(
                 mu,

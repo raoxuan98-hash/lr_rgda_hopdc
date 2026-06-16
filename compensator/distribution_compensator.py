@@ -37,6 +37,7 @@ class DistributionCompensator:
         hopfield_topk: int = 1000,
         rgda_num_centers: int = 1,
         rgda_gmm_k: int = 4,
+        rgda_gmm_backend: str = "sklearn_spherical",
     ):
         self.device = device
         self.auxiliary_data_size = auxiliary_data_size
@@ -45,6 +46,7 @@ class DistributionCompensator:
         self.hopfield_topk = hopfield_topk
         self.rgda_num_centers = max(1, int(rgda_num_centers))
         self.rgda_gmm_k = max(0, int(rgda_gmm_k))
+        self.rgda_gmm_backend = str(rgda_gmm_backend).lower()
         
         # 补偿器类型控制
         if compensator_types is None:
@@ -61,6 +63,7 @@ class DistributionCompensator:
             feature_combination_type=feature_combination_type,
             rgda_num_centers=self.rgda_num_centers,
             rgda_gmm_k=self.rgda_gmm_k,
+            rgda_gmm_backend=self.rgda_gmm_backend,
         )
 
         # 变体存储

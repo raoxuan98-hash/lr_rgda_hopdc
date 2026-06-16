@@ -162,13 +162,18 @@ class GaussianStatistics:
         if k == 0:
             raise ValueError("Stored GMM has zero components")
 
-        raw_counts = weights * int(n_samples)
-        counts = torch.floor(raw_counts).long()
-        remaining = int(n_samples - counts.sum().item())
-        if remaining > 0:
-            order = torch.argsort(raw_counts - counts.float(), descending=True)
-            for idx in order[:remaining]:
-                counts[idx] += 1
+        # Match project_clip_continual_learning/main_joint.py: allocate by
+        # rounded mixture weights, keep every component represented, and put the
+        # residual on the largest-weight component.
+        counts = torch.clamp(torch.round(weights * int(n_samples)).long(), min=1)
+        diff = int(n_samples - counts.sum().item())
+        max_idx = int(torch.argmax(weights).item())
+        counts[max_idx] += diff
+        if counts[max_idx] < 0:
+            raise ValueError(
+                "GMM replay count allocation became negative; increase n_samples "
+                "or reduce the number of GMM components."
+            )
 
         generator = None
         if seed is not None:
@@ -260,6 +265,46 @@ def fit_diag_gmm_statistics(
     weights_t = torch.tensor(weights).float()
     weights_t = weights_t / weights_t.sum().clamp(min=1e-12)
     return centers, torch.stack(diag_vars), weights_t
+
+
+def fit_spherical_gmm_statistics(
+    x: torch.Tensor,
+    num_components: int,
+    seed: int = 42,
+    reg: float = 1e-6,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Fit sklearn spherical GMM statistics following project_clip main_joint.py.
+
+    This stores one scalar variance per component. ``GaussianStatistics.sample_gmm``
+    broadcasts that scalar over the feature dimension during stochastic replay.
+    """
+    try:
+        from sklearn.mixture import GaussianMixture
+    except ImportError as exc:
+        raise ImportError(
+            "rgda_gmm_backend=sklearn_spherical requires scikit-learn. "
+            "Install scikit-learn or use --rgda_gmm_backend kmeans_diag."
+        ) from exc
+
+    x_cpu = x.detach().float().cpu()
+    actual_k = max(1, min(int(num_components), x_cpu.size(0)))
+    if actual_k == 1:
+        var = x_cpu.var(dim=0, unbiased=False).mean().clamp(min=reg)
+        return x_cpu.mean(dim=0, keepdim=True), var.unsqueeze(0), torch.ones(1)
+
+    gmm = GaussianMixture(
+        n_components=actual_k,
+        covariance_type="spherical",
+        random_state=int(seed),
+        reg_covar=float(reg),
+    )
+    gmm.fit(x_cpu.numpy())
+
+    means = torch.from_numpy(gmm.means_).float()
+    variances = torch.from_numpy(gmm.covariances_).float().clamp(min=reg)
+    weights = torch.from_numpy(gmm.weights_).float()
+    weights = weights / weights.sum().clamp(min=1e-12)
+    return means, variances, weights
 
 class LowRankGaussianStatistics:
     def __init__(

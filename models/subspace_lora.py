@@ -126,7 +126,8 @@ class SubspaceLoRA(BaseLearner):
             hopfield_topk=args.get('hopfield_topk', 1000),
             rgda_num_centers=args.get(
                 'rgda_mc_num_centers', args.get('rgda_num_centers', 4)),
-            rgda_gmm_k=args.get('rgda_gmm_k', 4))
+            rgda_gmm_k=args.get('rgda_gmm_k', 4),
+            rgda_gmm_backend=args.get('rgda_gmm_backend', 'sklearn_spherical'))
         
         self.classifier_reconstructor = ClassifierReconstructor(
             device=self._device,

@@ -201,8 +201,9 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_train_iter', '--rgda_mc_train_iter', dest='rgda_mc_train_iter', type=int, default=200, help='Affine-only fine-tuning iterations for lr_rgda_mc.')
     gda.add_argument('--rgda_fit_lr', '--rgda_mc_fit_lr', dest='rgda_mc_fit_lr', type=float, default=0.01, help='Learning rate for lr_rgda_mc affine-only fine-tuning.')
     gda.add_argument('--rgda_fit_samples_per_class', '--rgda_mc_fit_samples_per_class', dest='rgda_mc_fit_samples_per_class', type=int, default=16, help='GMM replay pseudo-samples per class for lr_rgda_mc.')
-    gda.add_argument('--rgda_gmm_k', type=int, default=4, help='Diagonal-GMM components saved per class for lr_rgda_mc replay.')
-    gda.add_argument('--rgda_gmm_sample_mode', type=str, default='mean', choices=['mean', 'sample'], help='GMM replay mode for lr_rgda_mc: component means or diagonal-Gaussian samples.')
+    gda.add_argument('--rgda_gmm_k', type=int, default=4, help='GMM components saved per class for lr_rgda_mc replay.')
+    gda.add_argument('--rgda_gmm_backend', type=str, default='sklearn_spherical', choices=['sklearn_spherical', 'kmeans_diag'], help='GMM replay backend: sklearn_spherical follows project_clip main_joint.py; kmeans_diag is the faster deterministic fallback.')
+    gda.add_argument('--rgda_gmm_sample_mode', type=str, default='mean', choices=['mean', 'sample'], help='GMM replay mode for lr_rgda_mc: component means or Gaussian samples.')
     gda.add_argument('--rgda_gmm_seed', type=int, default=42, help='Random seed for lr_rgda_mc GMM replay sampling.')
     gda.add_argument('--rgda_rerank_topk', type=int, default=50, help='LDA coarse top-k size for LDA-TopK-LR-RGDA reranking classifiers.')
     
