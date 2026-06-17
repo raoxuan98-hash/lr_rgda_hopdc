@@ -162,6 +162,7 @@ class SubspaceLoRA(BaseLearner):
             qda_reg_alpha1=args['qda_reg_alpha1'],
             qda_reg_alpha2=args['qda_reg_alpha2'],
             qda_reg_alpha3=args['qda_reg_alpha3'],
+            rgda_rank=args.get('rgda_rank', 64),
             rgda_num_centers=args.get('rgda_num_centers', 4),
             rgda_train_iter=args.get('rgda_train_iter', 200),
             rgda_fit_lr=args.get('rgda_fit_lr', 0.01),

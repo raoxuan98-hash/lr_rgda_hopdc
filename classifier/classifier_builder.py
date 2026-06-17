@@ -80,6 +80,7 @@ class ClassifierReconstructor:
         self.qda_reg_alpha1 = self.rgda_alpha1
         self.qda_reg_alpha2 = self.rgda_alpha2
         self.qda_reg_alpha3 = self.rgda_alpha3
+        self.rgda_rank = int(kwargs.get('rgda_rank', 64))
         self.rgda_mc_num_centers = kwargs.get(
             'rgda_mc_num_centers', kwargs.get('rgda_num_centers', 4))
         self.rgda_mc_train_iter = kwargs.get(
@@ -195,6 +196,7 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
+                rank=self.rgda_rank,
                 num_centers=1,
                 train_iter=0,
                 fit_samples_per_class=0,
@@ -207,6 +209,7 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
+                rank=self.rgda_rank,
                 num_centers=self.rgda_mc_num_centers,
                 train_iter=self.rgda_mc_train_iter,
                 fit_lr=self.rgda_mc_fit_lr,
@@ -224,6 +227,7 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
+                rank=self.rgda_rank,
                 num_centers=1,
                 train_iter=0,
                 fit_samples_per_class=0,
@@ -238,6 +242,7 @@ class ClassifierReconstructor:
                 rgda_alpha2=self.rgda_alpha2,
                 rgda_alpha3=self.rgda_alpha3,
                 low_rank=True,
+                rank=self.rgda_rank,
                 num_centers=self.rgda_mc_num_centers,
                 train_iter=self.rgda_mc_train_iter,
                 fit_lr=self.rgda_mc_fit_lr,

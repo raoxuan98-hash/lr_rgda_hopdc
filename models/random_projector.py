@@ -68,7 +68,8 @@ class RandomProjector(BaseLearner):
             lda_reg_alpha=args['lda_reg_alpha'],
             qda_reg_alpha1=args['qda_reg_alpha1'],
             qda_reg_alpha2=args['qda_reg_alpha2'],
-            qda_reg_alpha3=args['qda_reg_alpha3'])
+            qda_reg_alpha3=args['qda_reg_alpha3'],
+            rgda_rank=args.get('rgda_rank', 64))
         
         self.seed: int = args["seed"]
         self.task_count: int = 0

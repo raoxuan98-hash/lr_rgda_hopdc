@@ -200,6 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     gda.add_argument('--rgda_alpha1', '--qda_reg_alpha1', dest='qda_reg_alpha1', type=float, default=0.20, help='RGDA class-specific covariance weight alpha1.')
     gda.add_argument('--rgda_alpha2', '--qda_reg_alpha2', dest='qda_reg_alpha2', type=float, default=2.00, help='RGDA shared covariance weight alpha2.')
     gda.add_argument('--rgda_alpha3', '--qda_reg_alpha3', dest='qda_reg_alpha3', type=float, default=0.50, help='RGDA identity regularization weight alpha3.')
+    gda.add_argument('--rgda_rank', type=int, default=64, help='Low-rank dimension for LR-RGDA and LDA-TopK-LR-RGDA classifiers.')
     gda.add_argument('--rgda_num_centers', '--rgda_mc_num_centers', dest='rgda_mc_num_centers', type=int, default=4, help='Per-class centers for lr_rgda_mc. The old --rgda_num_centers spelling is kept as an alias.')
     gda.add_argument('--rgda_train_iter', '--rgda_mc_train_iter', dest='rgda_mc_train_iter', type=int, default=200, help='Affine-only fine-tuning iterations for lr_rgda_mc.')
     gda.add_argument('--rgda_fit_lr', '--rgda_mc_fit_lr', dest='rgda_mc_fit_lr', type=float, default=0.01, help='Learning rate for lr_rgda_mc affine-only fine-tuning.')
