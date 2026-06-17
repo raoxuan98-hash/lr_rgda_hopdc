@@ -219,11 +219,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     comp = parser.add_argument_group('compensator', 'Distribution compensator settings')
     comp.add_argument('--compensator_types', type=str, nargs='+', default=['SeqFT', 'SeqFT + HopDC'],
-                    choices=['SeqFT', 'SeqFT + linear', 'SeqFT + weaknonlinear', 'SeqFT + HopDC', 'SeqFT + Hopfield', 'SeqFT + rff'],
+                    choices=['SeqFT', 'SeqFT + linear', 'SeqFT + weaknonlinear', 'SeqFT + HopDC', 'SeqFT + Hopfield', 'SeqFT + rff', 'SeqFT + RFF-HopDC', 'SeqFT + RFFHopDC', 'SeqFT + LinearHopDC'],
                     help='Distribution-statistics variants to evaluate. Use "SeqFT + HopDC" for the paper method.')
                     
     comp.add_argument('--hopfield_temp', type=float, default=0.05, help='Temperature parameter for Hopfield attention compensator.')
     comp.add_argument('--hopfield_topk', type=int, default=400, help='Top-k parameter for Hopfield attention compensator.')
+    comp.add_argument('--rff_hopdc_dim', type=int, default=1024, help='Random feature dimension for RFF-HopDC linear attention.')
+    comp.add_argument('--rff_hopdc_gamma', type=float, default=5.0, help='RBF gamma for RFF-HopDC. For normalized features, gamma ~= 1 / (2 * HopDC temperature).')
+    comp.add_argument('--rff_hopdc_feature_mode', type=str, default='cos_positive', choices=['cos', 'cos_positive', 'elu'], help='Random feature map for RFF-HopDC.')
+    comp.add_argument('--rff_hopdc_compensate_cov', action='store_true', default=False, help='If set, RFF-HopDC also estimates compensated covariance from samples.')
+    comp.add_argument('--rff_hopdc_den_eps', type=float, default=1e-6, help='Denominator clamp for normalized RFF-HopDC attention.')
+    comp.add_argument('--rff_hopdc_drift_clip', type=float, default=0.0, help='Optional max norm for predicted RFF-HopDC drift. 0 disables clipping.')
+    comp.add_argument('--rff_hopdc_cov_samples', type=int, default=128, help='Samples per class when RFF-HopDC covariance compensation is enabled.')
+    comp.add_argument('--rff_hopdc_seed', type=int, default=42, help='Random seed for RFF-HopDC random features.')
     
     # 权重插值参数
     interp = parser.add_argument_group('interpolation', 'Weight interpolation settings')

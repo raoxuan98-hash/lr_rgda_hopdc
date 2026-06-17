@@ -14,6 +14,7 @@ from compensator.sldc_linear import LinearCompensator
 from compensator.sldc_weaknonlinear import WeakNonlinearCompensator
 from compensator.sldc_attention import HopfieldDistributionCompensator
 from compensator.base_compensator import RFFDriftCompensator
+from compensator.rff_hopdc import RFFLinearAttentionHopDC
 
 
 def log_time_usage(operation_name: str, start_time: float, end_time: float):
@@ -38,6 +39,14 @@ class DistributionCompensator:
         rgda_num_centers: int = 1,
         rgda_gmm_k: int = 4,
         rgda_gmm_backend: str = "sklearn_spherical",
+        rff_hopdc_dim: int = 1024,
+        rff_hopdc_gamma: float = 5.0,
+        rff_hopdc_feature_mode: str = "cos_positive",
+        rff_hopdc_compensate_cov: bool = False,
+        rff_hopdc_den_eps: float = 1e-6,
+        rff_hopdc_drift_clip: float = 0.0,
+        rff_hopdc_cov_samples: int = 128,
+        rff_hopdc_seed: int = 42,
     ):
         self.device = device
         self.auxiliary_data_size = auxiliary_data_size
@@ -47,6 +56,14 @@ class DistributionCompensator:
         self.rgda_num_centers = max(1, int(rgda_num_centers))
         self.rgda_gmm_k = max(0, int(rgda_gmm_k))
         self.rgda_gmm_backend = str(rgda_gmm_backend).lower()
+        self.rff_hopdc_dim = int(rff_hopdc_dim)
+        self.rff_hopdc_gamma = float(rff_hopdc_gamma)
+        self.rff_hopdc_feature_mode = str(rff_hopdc_feature_mode)
+        self.rff_hopdc_compensate_cov = bool(rff_hopdc_compensate_cov)
+        self.rff_hopdc_den_eps = float(rff_hopdc_den_eps)
+        self.rff_hopdc_drift_clip = float(rff_hopdc_drift_clip)
+        self.rff_hopdc_cov_samples = int(rff_hopdc_cov_samples)
+        self.rff_hopdc_seed = int(rff_hopdc_seed)
         
         # 补偿器类型控制
         if compensator_types is None:
@@ -77,6 +94,9 @@ class DistributionCompensator:
             "SeqFT + Hopfield": "SeqFT + HopDC",
             "SeqFT + HopDC": "SeqFT + HopDC",
             "SeqFT + rff": "SeqFT + rff",
+            "SeqFT + RFF-HopDC": "SeqFT + RFF-HopDC",
+            "SeqFT + RFFHopDC": "SeqFT + RFF-HopDC",
+            "SeqFT + LinearHopDC": "SeqFT + RFF-HopDC",
         }
         normalized = []
         for comp_type in compensator_types:
@@ -273,6 +293,37 @@ class DistributionCompensator:
         
         return compensator
 
+    def _compute_rff_hopdc_transform(
+        self,
+        f_before: torch.Tensor,
+        f_after: torch.Tensor,
+    ) -> RFFLinearAttentionHopDC:
+        """Compute scalable RFF linear-attention HopDC."""
+        operation_name = "RFF-HopDC"
+        start_memory = self._get_gpu_memory_info()
+        start_time = time.time()
+
+        compensator = RFFLinearAttentionHopDC(
+            input_dim=f_before.size(1),
+            device=self.device,
+            random_feature_dim=self.rff_hopdc_dim,
+            gamma=self.rff_hopdc_gamma,
+            feature_mode=self.rff_hopdc_feature_mode,
+            compensate_cov=self.rff_hopdc_compensate_cov,
+            den_eps=self.rff_hopdc_den_eps,
+            drift_clip=self.rff_hopdc_drift_clip,
+            cov_samples=self.rff_hopdc_cov_samples,
+            seed=self.rff_hopdc_seed,
+        )
+        compensator.train(f_before.to(self.device), f_after.to(self.device))
+
+        end_time = time.time()
+        end_memory = self._get_gpu_memory_info()
+        log_time_usage(operation_name, start_time, end_time)
+        self._log_memory_usage(operation_name, start_memory, end_memory)
+
+        return compensator
+
     def _update_variants_with_transforms(
         self,
         task_id: int,
@@ -301,6 +352,10 @@ class DistributionCompensator:
             
         if "SeqFT + rff" in self.compensator_types:
             transforms["rff"] = self._compute_rff_transform(combined_before, combined_after)
+
+        if "SeqFT + RFF-HopDC" in self.compensator_types:
+            transforms["RFF-HopDC"] = self._compute_rff_hopdc_transform(
+                combined_before, combined_after)
         
         # 应用变换到现有统计量并更新
         for transform_name, transform in transforms.items():
