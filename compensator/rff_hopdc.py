@@ -31,7 +31,7 @@ class RFFLinearAttentionHopDC(BaseCompensator):
         device: str = "cuda",
         random_feature_dim: int = 1024,
         gamma: float = 5.0,
-        feature_mode: str = "sincos",
+        feature_mode: str = "cos_positive",
         compensate_cov: bool = False,
         den_eps: float = 1e-6,
         drift_clip: float = 0.0,

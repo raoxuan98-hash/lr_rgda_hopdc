@@ -157,7 +157,7 @@ class SubspaceLoRA(BaseLearner):
             rgda_gmm_backend=args.get('rgda_gmm_backend', 'sklearn_spherical'),
             rff_hopdc_dim=args.get('rff_hopdc_dim', 1024),
             rff_hopdc_gamma=args.get('rff_hopdc_gamma', 5.0),
-            rff_hopdc_feature_mode=args.get('rff_hopdc_feature_mode', 'sincos'),
+            rff_hopdc_feature_mode=args.get('rff_hopdc_feature_mode', 'cos_positive'),
             rff_hopdc_compensate_cov=args.get('rff_hopdc_compensate_cov', False),
             rff_hopdc_den_eps=args.get('rff_hopdc_den_eps', 1e-6),
             rff_hopdc_drift_clip=args.get('rff_hopdc_drift_clip', 0.0),
