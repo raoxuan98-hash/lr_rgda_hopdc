@@ -226,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument('--hopfield_topk', type=int, default=400, help='Top-k parameter for Hopfield attention compensator.')
     comp.add_argument('--rff_hopdc_dim', type=int, default=1024, help='Random feature dimension for RFF-HopDC linear attention.')
     comp.add_argument('--rff_hopdc_gamma', type=float, default=5.0, help='RBF gamma for RFF-HopDC. For normalized features, gamma ~= 1 / (2 * HopDC temperature).')
-    comp.add_argument('--rff_hopdc_feature_mode', type=str, default='cos_positive', choices=['cos', 'cos_positive', 'elu'], help='Random feature map for RFF-HopDC.')
+    comp.add_argument('--rff_hopdc_feature_mode', type=str, default='sincos', choices=['sincos', 'cos', 'cos_positive', 'elu'], help='Random feature map for RFF-HopDC. sincos matches the legacy RFF attention feature map.')
     comp.add_argument('--rff_hopdc_compensate_cov', action='store_true', default=False, help='If set, RFF-HopDC also estimates compensated covariance from samples.')
     comp.add_argument('--rff_hopdc_den_eps', type=float, default=1e-6, help='Denominator clamp for normalized RFF-HopDC attention.')
     comp.add_argument('--rff_hopdc_drift_clip', type=float, default=0.0, help='Optional max norm for predicted RFF-HopDC drift. 0 disables clipping.')

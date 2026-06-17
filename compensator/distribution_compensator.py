@@ -41,7 +41,7 @@ class DistributionCompensator:
         rgda_gmm_backend: str = "sklearn_spherical",
         rff_hopdc_dim: int = 1024,
         rff_hopdc_gamma: float = 5.0,
-        rff_hopdc_feature_mode: str = "cos_positive",
+        rff_hopdc_feature_mode: str = "sincos",
         rff_hopdc_compensate_cov: bool = False,
         rff_hopdc_den_eps: float = 1e-6,
         rff_hopdc_drift_clip: float = 0.0,

@@ -31,7 +31,7 @@ class RFFLinearAttentionHopDC(BaseCompensator):
         device: str = "cuda",
         random_feature_dim: int = 1024,
         gamma: float = 5.0,
-        feature_mode: str = "cos_positive",
+        feature_mode: str = "sincos",
         compensate_cov: bool = False,
         den_eps: float = 1e-6,
         drift_clip: float = 0.0,
@@ -50,14 +50,15 @@ class RFFLinearAttentionHopDC(BaseCompensator):
         self.chunk_size = max(1, int(chunk_size))
         self.seed = int(seed)
 
-        if self.feature_mode not in {"cos", "cos_positive", "elu"}:
+        if self.feature_mode not in {"sincos", "cos", "cos_positive", "elu"}:
             raise ValueError(
-                "feature_mode must be one of: cos, cos_positive, elu")
+                "feature_mode must be one of: sincos, cos, cos_positive, elu")
 
         self.omega = None
         self.phase = None
         self.kv = None
         self.k_sum = None
+        self.phi_dim = None
 
     def _init_features(self, dtype: torch.dtype):
         generator = torch.Generator(device=self.device)
@@ -83,12 +84,17 @@ class RFFLinearAttentionHopDC(BaseCompensator):
             self._init_features(x.dtype)
 
         x = F.normalize(x.to(self.device), dim=1)
-        proj = x @ self.omega + self.phase
+        proj = x @ self.omega
 
+        if self.feature_mode == "sincos":
+            # Match the legacy RFF attention feature map:
+            #   phi(x) = [sin(x @ omega), cos(x @ omega)].
+            # The constant factor cancels in normalized linear attention.
+            return torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
         if self.feature_mode == "cos":
-            return torch.cos(proj) * math.sqrt(2.0 / self.random_feature_dim)
+            return torch.cos(proj + self.phase) * math.sqrt(2.0 / self.random_feature_dim)
         if self.feature_mode == "cos_positive":
-            return (torch.cos(proj) + 1.0) / math.sqrt(self.random_feature_dim)
+            return (torch.cos(proj + self.phase) + 1.0) / math.sqrt(self.random_feature_dim)
         # Positive linear-attention fallback. This is not an unbiased RBF RFF
         # map, but gives stable non-negative weights for ablations.
         return F.elu(proj) + 1.0
@@ -98,14 +104,16 @@ class RFFLinearAttentionHopDC(BaseCompensator):
         values = features_after.to(self.device) - keys
 
         phi_k = self._phi(keys)
+        self.phi_dim = phi_k.size(1)
         self.kv = phi_k.transpose(0, 1) @ values
         self.k_sum = phi_k.sum(dim=0)
         self.is_trained = True
         logger.info(
-            "RFF-HopDC trained: N=%d, D=%d, R=%d, gamma=%.4g, mode=%s, compensate_cov=%s",
+            "RFF-HopDC trained: N=%d, D=%d, projection_dim=%d, phi_dim=%d, gamma=%.4g, mode=%s, compensate_cov=%s",
             keys.size(0),
             keys.size(1),
             self.random_feature_dim,
+            self.phi_dim,
             self.gamma,
             self.feature_mode,
             self.compensate_cov,
@@ -126,7 +134,15 @@ class RFFLinearAttentionHopDC(BaseCompensator):
         phi_q = self._phi(points)
         numerator = phi_q @ self.kv
         denominator = phi_q @ self.k_sum
-        denominator = denominator.unsqueeze(1).clamp(min=self.den_eps)
+        if self.feature_mode in {"cos_positive", "elu"}:
+            denominator = denominator.clamp(min=self.den_eps)
+        else:
+            # Signed RFF features follow the legacy sin/cos map but can produce
+            # negative denominators. The efficient associativity trick cannot
+            # reproduce the legacy pairwise clamp without materializing [B, N],
+            # so we stabilize only the normalization magnitude here.
+            denominator = denominator.sign() * denominator.abs().clamp(min=self.den_eps)
+        denominator = denominator.unsqueeze(1)
         return self._clip_drift(numerator / denominator)
 
     @torch.no_grad()
